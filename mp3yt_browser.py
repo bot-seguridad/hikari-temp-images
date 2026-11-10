@@ -7,7 +7,6 @@ import sys
 import threading
 import time
 import uuid
-from collections import deque
 from pathlib import Path
 from tempfile import gettempdir
 from urllib.parse import parse_qs, urlsplit
@@ -19,7 +18,6 @@ PATH.mkdir(parents=True, exist_ok=True)
 install_lock = threading.Lock()
 browser_lock = threading.Lock()
 _state = {"status": "pending", "error": ""}
-_ready = False
 screenshots = {}
 screens_lock = threading.Lock()
 
@@ -220,6 +218,69 @@ def _wait_for_format(page, fmt, deadline_seconds=45):
     return state, observations, elapsed, controls
 
 
+
+def _validate_download(download, fmt):
+    """Wait for browser download and inspect bytes; no file is persisted after context closes."""
+    name = (download.suggested_filename or "")[:180]
+    outcome = {"attempted": True, "filename": name, "status": "started",
+               "verified": False, "bytes": None}
+    try:
+        failure = download.failure()
+        if failure:
+            outcome.update(status="failed", error=str(failure)[:300])
+            return outcome
+        file_path = Path(download.path())
+        size = file_path.stat().st_size
+        with file_path.open("rb") as stream:
+            header = stream.read(32)
+        mp3_signature = header.startswith(b"ID3") or (
+            len(header) >= 2 and header[0] == 0xff and (header[1] & 0xe0) == 0xe0
+        )
+        mp4_signature = len(header) >= 12 and b"ftyp" == header[4:8]
+        matches = mp3_signature if fmt == "mp3" else mp4_signature
+        outcome.update({
+            "status": "verified" if matches and size > 1024 else "invalid_media",
+            "bytes": size,
+            "header_hex": header[:12].hex(),
+            "verified": bool(matches and size > 1024),
+            "detail": "El navegador terminó la descarga; cabecera de archivo válida."
+                      if matches and size > 1024 else
+                      "La descarga terminó, pero no tiene una cabecera válida del formato solicitado.",
+        })
+        return outcome
+    except Exception as exc:
+        outcome.update(status="validation_failed", error=str(exc)[:300])
+        return outcome
+
+
+def _click_download(page, fmt, downloads, popups):
+    """Interact only with the visible download control for selected format."""
+    button = _first_visible([
+        page.get_by_role("button", name=re.compile(r"^Download\s+" + fmt + r"$", re.I)),
+        page.locator("button").filter(has_text=re.compile(r"^\s*Download\s+" + fmt + r"\s*$", re.I)),
+    ])
+    if button is None:
+        return {
+            "status": "download_control_not_found",
+            "detail": "No se encontró un botón visible Download " + fmt.upper() + ".",
+        }
+    try:
+        button.click(timeout=7000)
+    except Exception as exc:
+        return {"status": "click_failed", "detail": str(exc)[:300]}
+    # Download can be triggered immediately, asynchronously, or in a new window.
+    started = time.monotonic()
+    while time.monotonic() - started < 28:
+        if downloads:
+            return {"status": "download_event", "detail": "Chromium recibió un evento de descarga.",
+                    "seconds": round(time.monotonic() - started, 1)}
+        page.wait_for_timeout(1000)
+    return {"status": "download_not_detected",
+            "detail": "El botón respondió al clic, pero no hubo evento de descarga de Chromium en 28 segundos.",
+            "seconds": round(time.monotonic() - started, 1),
+            "popups": popups[:8]}
+
+
 def run_test(raw_url, fmt):
     if fmt not in {"mp3", "mp4"}:
         raise ValueError("El formato debe ser MP3 o MP4.")
@@ -239,18 +300,32 @@ def run_test(raw_url, fmt):
     observations = []
     final_controls = []
     wait_seconds = 0
+    download_events = []
+    popup_events = []
+    download_report = {"status": "not_attempted", "attempted": False, "verified": False}
+    click_report = {"status": "not_attempted"}
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
             context = browser.new_context(
                 viewport={"width": 1280, "height": 800},
-                accept_downloads=False,
+                accept_downloads=True,
                 locale="en-US",
                 service_workers="block",
             )
             page = context.new_page()
             page.set_default_timeout(6500)
+            def observe_page(tab):
+                tab.on("download", lambda d: download_events.append(d) if len(download_events) < 4 else None)
+                if tab != page:
+                    try:
+                        tab_url = urlsplit(tab.url)
+                        popup_events.append({"host": tab_url.hostname, "path": tab_url.path[:90]})
+                    except Exception:
+                        popup_events.append({"event": "new_page"})
+            observe_page(page)
+            context.on("page", observe_page)
             page.on("response", lambda res: events.append({
                 "status": res.status,
                 "path": urlsplit(res.url).path[:130],
@@ -302,11 +377,28 @@ def run_test(raw_url, fmt):
                         "detail": verdict["detail"],
                         "seconds": wait_seconds,
                     })
+                    if verdict["status"] == "ready_to_download":
+                        click_report = _click_download(page, fmt, download_events, popup_events)
+                        steps.append({"step": "click_download", "ok": click_report["status"] == "download_event",
+                                      "detail": click_report["detail"]})
+                        if download_events:
+                            download_report = _validate_download(download_events[0], fmt)
+                            verdict = {
+                                "status": "download_verified" if download_report["verified"] else
+                                          "download_invalid_or_failed",
+                                "detail": download_report.get("detail") or download_report.get("error") or
+                                          "No se pudo validar la descarga.",
+                            }
+                        else:
+                            download_report = {"status": "no_download_event", "attempted": True,
+                                               "verified": False, "detail": click_report["detail"]}
+                            verdict = {"status": "download_not_confirmed", "detail": click_report["detail"]}
                     steps.append({
                         "step": "file_download",
-                        "ok": None,
-                        "attempted": False,
-                        "detail": "No se inició una descarga. Se comprobó únicamente la disponibilidad del botón de " + fmt.upper() + ".",
+                        "ok": download_report.get("verified") if download_report.get("attempted") else None,
+                        "attempted": download_report.get("attempted", False),
+                        "detail": download_report.get("detail") or download_report.get("error") or
+                                  "No se inició una descarga porque todavía no aparecía el botón.",
                     })
                     final = _summary(page)
                 screen_url = record_screenshot(page.screenshot(type="png", full_page=False, timeout=10000))
@@ -327,9 +419,11 @@ def run_test(raw_url, fmt):
             "steps":steps, "page":final, "http_responses":events,
             "network_errors":network_errors, "page_errors":console_errors,
             "verdict":verdict, "format_observations":observations, "final_controls":final_controls,
-            "wait_seconds":wait_seconds, "download_verified":False,
+            "wait_seconds":wait_seconds, "download_attempt":click_report,
+            "download_result": download_report, "download_verified":download_report.get("verified", False),
+            "popup_events":popup_events,
             "screenshot_url":screen_url, "elapsed_seconds":round(time.monotonic()-started,1),
-            "note":"Ready_to_download solo significa que MP3YT mostró un botón de descarga habilitado. No se descargó ni validó el archivo. No se evaden bloqueos ni APIs privadas."
+            "note":"La descarga se valida solo si Chromium termina de recibir un archivo y coincide su cabecera MP3/MP4. El archivo temporal se borra al cerrar la sesión. No se eluden bloqueos ni se usan APIs privadas."
         }
     finally:
         browser_lock.release()
