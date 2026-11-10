@@ -144,7 +144,7 @@ def run_conversion(url, fmt):
             cmd += ["-f", "bestaudio[ext=m4a]/bestaudio", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "5"]
         else:
             cmd += [
-                "-f", "b[ext=mp4][height<=480]/bv*[ext=mp4][height<=480]+ba[ext=m4a]/b[ext=mp4]/b[height<=480]",
+                "-f", "b[ext=mp4][height<=480]/bv*[ext=mp4][height<=480]+ba[ext=m4a]",
                 "--merge-output-format", "mp4", "--remux-video", "mp4"
             ]
         cmd.append(canonical)
