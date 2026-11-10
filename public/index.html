@@ -46,7 +46,7 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <textarea id="diagnostic-fallback" readonly aria-label="Diagnóstico para copiar manualmente"></textarea>
 <p id="browser-status" class="secondary">Consultando estado del navegador…</p>
 <div id="result-status" role="status" aria-live="polite">Todavía no se ejecutó ninguna prueba.</div>
-<p class="small-note">Esto automatiza <strong>MP3YT</strong>, no YouTube directamente. Muestra los pasos y respuestas HTTP del sitio; una respuesta HTTP 200 no significa necesariamente que haya terminado la conversión. No elude CAPTCHA ni restricciones.</p>
+<p class="small-note">Esto automatiza <strong>MP3YT</strong>, no YouTube directamente. Después de enviar el enlace espera hasta 45 segundos a que aparezca <strong>Download MP3</strong> o <strong>Download MP4</strong>. Un botón listo no prueba que el archivo sea válido; no descargamos archivos ni eludimos CAPTCHA o restricciones.</p>
 </section>
 <div class="results">
 <section class="panel"><h2>Pasos realizados</h2><ol class="steps" id="steps"><li>Esperando una prueba.</li></ol></section>
@@ -81,7 +81,7 @@ function diagnosticText(){
     "DIAGNÓSTICO DE MP3YT — PARA CHATGPT",
     "",
     "Analizá si la automatización de la interfaz pública MP3YT funcionó, en qué paso se detuvo y qué habría que ajustar. No se está usando yt-dlp: se usa Playwright sobre mp3yt.is.",
-    "IMPORTANTE: un HTTP 200 o seleccionar MP3/MP4 no demuestran que el archivo se haya convertido o descargado.",
+    "IMPORTANTE: el resultado «ready_to_download» confirma solo un botón habilitado; no verifica la descarga ni la validez del archivo. Un HTTP 200 tampoco acredita conversión exitosa.",
     "",
     "Página de pruebas: "+location.origin,
     "Fecha de copia: "+new Date().toISOString(),
@@ -141,10 +141,21 @@ el("test-form").addEventListener("submit",async ev=>{
       el("snapshot").src=d.screenshot_url;el("snapshot").style.display="block";
       el("screen-note").textContent="Captura de lo que vio el navegador en MP3YT.";
    }else{el("screen-note").textContent="La página no pudo obtener una captura."}
-   const completed=(d.steps||[]).some(s=>s.step==="select_format"&&s.ok);
-   const problems=(d.steps||[]).filter(s=>s.step==="browser_error"||s.step==="find_form");
-   el("result-status").textContent=problems.length?"La prueba encontró un bloqueo o error. Mirá el diagnóstico.":completed?"MP3YT recibió el enlace y se seleccionó el formato. Revisá el resultado.":"Se inspeccionó MP3YT, pero no se pudo verificar la selección del formato.";
-   el("result-status").className=problems.length?"error":completed?"success":"";
+   const verdict=d.verdict||{};
+   const checkedFormat=(d.format||el("format").value).toUpperCase();
+   if(verdict.status==="ready_to_download"){
+     el("result-status").textContent="MP3YT muestra «Download "+checkedFormat+"» habilitado. El archivo todavía NO se descargó ni verificó.";
+     el("result-status").className="success";
+   }else if(verdict.status==="timeout_preparing"){
+     el("result-status").textContent="MP3YT seguía preparando "+checkedFormat+" después de "+(d.wait_seconds||45)+" segundos. Descarga NO confirmada.";
+     el("result-status").className="error";
+   }else if(verdict.status==="not_ready_timeout"){
+     el("result-status").textContent="No apareció un botón de descarga "+checkedFormat+" listo antes del límite. Revisá los eventos del navegador.";
+     el("result-status").className="error";
+   }else{
+     el("result-status").textContent="No se pudo comprobar la disponibilidad de "+checkedFormat+": "+(verdict.detail||"Consultá el diagnóstico.");
+     el("result-status").className="error";
+   }
  }catch(err){
    lastTest={...lastTest,status:"failed",client_error:String(err.message),elapsed_client_seconds:Math.round((performance.now()-testStarted)/100)/10,finished_at:new Date().toISOString()};
    el("result-status").textContent="Prueba no completada: "+err.message;
