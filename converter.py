@@ -24,6 +24,7 @@ job_lock = threading.Lock()
 saved = {}
 saved_lock = threading.Lock()
 ffmpeg_bin = None
+deno_bin = None
 
 def normalize_youtube_url(url):
     if not isinstance(url, str) or len(url) > 1500:
@@ -51,7 +52,7 @@ def engine_status():
         return dict(state)
 
 def ensure_tools():
-    global ffmpeg_bin
+    global ffmpeg_bin, deno_bin
     with state_lock:
         if state["status"] in ("ready", "installing"):
             return state["status"] == "ready"
@@ -61,20 +62,29 @@ def ensure_tools():
         try:
             importlib.import_module("yt_dlp")
             imageio = importlib.import_module("imageio_ffmpeg")
+            deno_module = importlib.import_module("deno")
         except ImportError:
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
-                 "--no-input", "--quiet", "yt-dlp[default]", "imageio-ffmpeg"],
+                 "--no-input", "--quiet", "yt-dlp[default]", "imageio-ffmpeg", "deno"],
                 capture_output=True, text=True, timeout=160,
             )
             if result.returncode != 0:
                 raise RuntimeError("No se pudieron instalar las dependencias: " + (result.stderr or result.stdout)[-850:])
             importlib.invalidate_caches()
             imageio = importlib.import_module("imageio_ffmpeg")
+            deno_module = importlib.import_module("deno")
             importlib.import_module("yt_dlp")
         ffmpeg_bin = imageio.get_ffmpeg_exe()
         if not Path(ffmpeg_bin).is_file():
             raise RuntimeError("No se encontró el ejecutable FFmpeg.")
+        deno_bin = deno_module.find_deno_bin()
+        if not Path(deno_bin).is_file():
+            raise RuntimeError("No se encontró el ejecutable Deno.")
+        test = subprocess.run([deno_bin, "--version"], capture_output=True, text=True, timeout=12)
+        if test.returncode != 0:
+            raise RuntimeError("Deno no pudo iniciarse: " + (test.stderr or "")[-300:])
+        print("[media] Motor listo: yt-dlp, FFmpeg, Deno", flush=True)
         with state_lock:
             state["status"] = "ready"
         return True
@@ -82,6 +92,7 @@ def ensure_tools():
         with state_lock:
             state["status"] = "error"
             state["error"] = str(exc)[:600]
+        print("[media] Falló la instalación: " + str(exc)[:600], flush=True)
         return False
 
 def begin_setup():
@@ -126,7 +137,7 @@ def run_conversion(url, fmt):
             "--no-progress", "--no-part", "--socket-timeout", "12",
             "--retries", "1", "--fragment-retries", "1", "--extractor-retries", "1",
             "--max-filesize", "35M", "--match-filter", "duration <= 600",
-            "--ffmpeg-location", ffmpeg_bin,
+            "--ffmpeg-location", ffmpeg_bin, "--js-runtimes", "deno:" + deno_bin,
             "--output", str(folder / "media.%(ext)s"),
         ]
         if fmt == "mp3":
