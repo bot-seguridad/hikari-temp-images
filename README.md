@@ -1,36 +1,32 @@
-# Bepo Media Lab — MP3YT Inspector + pruebas MP3/MP4
+# MP3YT · Automatización web en Render
 
 Página: https://mp3yt-public-inspector.onrender.com
 
-## Funciones
+Este proyecto prueba **la interfaz pública de https://mp3yt.is**, no YouTube directamente. Para la automatización se usa Playwright con Chromium headless, que intenta hacer lo mismo que haría una persona en la web: abrir MP3YT, pegar una URL de YouTube autorizada, enviar el formulario, seleccionar MP3/MP4 si el sitio lo ofrece y mostrar el resultado.
 
-1. **Inspección de MP3YT**: `GET /api/scrape` muestra etiquetas y formularios del HTML público de https://mp3yt.is. No inspecciona ni utiliza APIs internas de ese sitio.
-2. **Pruebas reales MP3/MP4**: en la portada se pega un enlace individual de YouTube y se elige MP3 (audio) o MP4 (video). El servicio ejecuta `yt-dlp` con FFmpeg y Deno directamente contra YouTube, **no mediante MP3YT**. Se devuelven diagnósticos reales y, si se produjo el archivo, un enlace temporal.
-3. **Estado**: `GET /api/health` informa si el servidor está funcionando y si las dependencias del motor están listas.
+**No usa yt-dlp, youtube-dl, FFmpeg ni ninguna API interna de MP3YT.** Se eliminó el antiguo motor de conversión. Esta prueba no garantiza que MP3YT acepte la automatización ni que produzca un archivo descargable. No se eluden los CAPTCHAs ni las restricciones.
 
-## Límites y seguridad
+## Panel
 
-- Solo enlaces HTTPS individuales de los dominios permitidos de YouTube; no listas ni direcciones arbitrarias.
-- Pruebas para videos de hasta 10 minutos, archivo final máximo 35 MB y MP4 hasta 480p.
-- Una conversión simultánea por instancia y tiempo de ejecución máximo 115 segundos.
-- Los archivos temporales caducan a los 10 minutos y no son persistentes.
-- La prueba puede fallar si YouTube bloquea las solicitudes procedentes de Render, si falta un formato o si cambia su comportamiento. Se muestra el error en el panel.
-- Usar solo contenido que tengas permiso de descargar; respetar los derechos y las condiciones de las plataformas.
+El panel tiene:
+- Campo para pegar un enlace HTTPS de YouTube.
+- Selector MP3/MP4 y botón de prueba.
+- Lista de pasos intentados y errores del navegador.
+- Captura de pantalla de MP3YT al finalizar y respuestas HTTP de su dominio.
+- Inspector HTML público separado.
 
-## Implementación
+## Endpoints
 
-El proyecto está en la rama `mp3yt-public-inspector` de `bot-seguridad/hikari-temp-images`. La rama principal queda sin cambios.
+- `GET /`: panel.
+- `GET /api/health`: estado de la aplicación y disponibilidad del navegador.
+- `GET /api/scrape`: inspección del HTML público, con caché de 90 segundos.
+- `POST /api/convert`: JSON `{"url":"https://www.youtube.com/watch?v=VIDEO_ID","format":"mp3"}` o `mp4`. Ejecuta navegación y devuelve pasos/captura/diagnóstico (no una conversión propia).
+- `GET /api/screenshot/<token>`: captura PNG temporal.
 
-Runtime: Python 3.14 en Render. Arranque: `python app.py`. Las dependencias de conversión se preparan automáticamente en el arranque de la instancia. El plan de Render es Free.
+## Despliegue
 
-## Desarrollo local
+El servicio Render usa la rama `mp3yt-public-inspector` de `bot-seguridad/hikari-temp-images` (main permanece sin cambios) y el plan gratuito. El servidor Python `app.py` inicia inmediatamente mientras se prepara Playwright/Chromium en segundo plano. La inicialización puede tardar al arrancar instancias nuevas y puede fallar por dependencias o restricciones del hosting.
 
-`python app.py`, luego http://localhost:10000. Para usar el motor de conversión, se necesita conexión de red al iniciar para instalar las dependencias.
+## Uso responsable
 
-## API
-
-- `GET /`: interfaz web.
-- `GET /api/health`: estado, motor y errores de instalación.
-- `GET /api/scrape`: HTML público, con caché de 90 s.
-- `POST /api/convert`: JSON `{"url":"https://www.youtube.com/watch?v=VIDEO_ID","format":"mp3"}` (o `mp4`). Devuelve resultado y enlace temporal, o el error del proceso.
-- `GET /api/download/<token>`: descarga del archivo temporal si la conversión terminó correctamente.
+Solo para videos propios o cuyo uso esté autorizado. Un HTTP 200 indica acceso a la página, no conversión exitosa. Las pruebas son limitadas a una simultánea por instancia. Si el sitio bloquea el navegador, se informa en el diagnóstico sin intentar evadirlo.
