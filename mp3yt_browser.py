@@ -141,6 +141,7 @@ def _summary(page):
         title: document.title,
         heading: [...document.querySelectorAll('h1,h2,h3')].map(el => el.innerText.trim()).filter(Boolean).slice(0,12),
         buttons: [...document.querySelectorAll('button,[role="button"],input[type=submit]')].map(el => (el.innerText || el.value || el.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0,30),
+        buttonStates: [...document.querySelectorAll('button,[role="button"],input[type=submit]')].filter(e=>e.getClientRects().length).slice(0,20).map(el=>({text:(el.innerText||el.value||el.getAttribute('aria-label')||'').trim().slice(0,110), disabled:!!el.disabled,ariaDisabled:el.getAttribute('aria-disabled')})),
         inputs: [...document.querySelectorAll('input')].filter(el => el.type !== 'hidden').map(el => ({type:el.type,id:el.id,placeholder:el.placeholder})).slice(0,15),
         visibleText: (document.body?.innerText || '').slice(0,1900),
         downloads: [...document.querySelectorAll('a[href]')].filter(el => /download|\\.mp[34](?:$|[?#])/i.test((el.innerText || '')+' '+el.href)).slice(0,10).map(el => ({text:(el.innerText||'').trim().slice(0,90),href:el.href}))
@@ -157,23 +158,66 @@ def _first_visible(locators):
     return None
 
 
-def _format_control(page, fmt):
+def _download_controls(page):
+    """Estado de botones visibles, sin hacer clic en elementos de descarga."""
+    return page.evaluate("""() =>
+      [...document.querySelectorAll('button,a,[role="button"],input[type="submit"]')]
+        .filter(e => e.getClientRects().length)
+        .slice(0, 65)
+        .map(e => {
+            const label = (e.innerText || e.value || e.getAttribute('aria-label') || '').trim().replace(/\\s+/g,' ').slice(0,110);
+            const parent = (e.parentElement?.innerText || '').trim().replace(/\\s+/g,' ').slice(0,180);
+            return {
+                label, tag: e.tagName.toLowerCase(),
+                enabled: !(e.disabled || e.getAttribute('aria-disabled')==='true'),
+                has_href: !!e.getAttribute('href'),
+                parent_text:parent
+            };
+        }).filter(x => x.label && /download|prepar|convert|ready|failed|error|search|retry|descarg|esper/i.test(x.label+' '+x.parent_text)).slice(0,22)
+    """)
+
+
+def _target_state(controls, fmt):
+    """No confundir un clic o un botón de otro formato con una conversión lista."""
     upper = fmt.upper()
-    from playwright.sync_api import expect
-    options = [
-        page.get_by_role("tab", name=re.compile(r"\b" + upper + r"\b", re.I)),
-        page.get_by_role("button", name=re.compile(r"\b" + upper + r"\b", re.I)),
-        page.locator("label").filter(has_text=re.compile(r"^\s*" + upper + r"\s*$", re.I)),
-        page.get_by_text(upper, exact=True),
-    ]
-    element = _first_visible(options)
-    if element:
-        try:
-            element.click(timeout=4500)
-            return "Se seleccionó " + upper + " en la interfaz."
-        except Exception as exc:
-            return "No se pudo seleccionar " + upper + ": " + str(exc)[:120]
-    return "Todavía no apareció una opción visible de " + upper + "."
+    ready = [c for c in controls if re.search(r"\\b(?:download|descargar|baixar)\\s+" + upper + r"\\b", c["label"], re.I) and c["enabled"]]
+    if ready:
+        return {"status": "ready_to_download", "detail": "MP3YT muestra un control habilitado de descarga " + upper + ". No se descargó ni validó el archivo.", "control": ready[0]}
+    disabled_ready = [c for c in controls if re.search(r"\\b(?:download|descargar|baixar)\\s+" + upper + r"\\b", c["label"], re.I)]
+    if disabled_ready:
+        return {"status": "download_disabled", "detail": "El botón de " + upper + " sigue deshabilitado.", "control": disabled_ready[0]}
+    preparing = [c for c in controls if re.search(r"prepar|converting|processing|generating|please wait|cargando|procesando", c["label"], re.I)]
+    if preparing:
+        return {"status": "preparing", "detail": "MP3YT sigue mostrando «" + preparing[0]["label"] + "». La preparación no se confirmó.", "control": preparing[0]}
+    return {"status": "not_available", "detail": "Aún no apareció un botón de descarga habilitado para " + upper + "."}
+
+
+def _wait_for_format(page, fmt, deadline_seconds=45):
+    """Esperar la opción de descarga sin entrar en bucles infinitos ni descargar archivos."""
+    started = time.monotonic()
+    observations = []
+    last_status = None
+    state = {"status": "not_available", "detail": "Sin controles detectados."}
+    controls = []
+    while time.monotonic() - started < deadline_seconds:
+        controls = _download_controls(page)
+        state = _target_state(controls, fmt)
+        if state["status"] != last_status:
+            observations.append({
+                "at_seconds": round(time.monotonic() - started,1),
+                "status": state["status"],
+                "detail": state["detail"],
+                "controls": [{"label":c["label"],"enabled":c["enabled"]} for c in controls[:8]],
+            })
+            last_status = state["status"]
+        if state["status"] == "ready_to_download":
+            break
+        page.wait_for_timeout(1500)
+    elapsed = round(time.monotonic() - started,1)
+    if state["status"] != "ready_to_download":
+        state = {**state, "status": "timeout_preparing" if state["status"] in {"preparing", "download_disabled"} else "not_ready_timeout",
+            "detail": state["detail"] + " Se agotó la espera de " + str(deadline_seconds) + " segundos."}
+    return state, observations, elapsed, controls
 
 
 def run_test(raw_url, fmt):
