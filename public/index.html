@@ -20,11 +20,15 @@ button,.button{display:inline-block;text-decoration:none;font:inherit;font-weigh
 button:disabled{opacity:.5;cursor:wait}.button{background:#243853;color:#e9f6ff}
 .secondary{font-size:13px;color:var(--muted)}.error{color:#ff9dac}.success{color:var(--green)}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#071124;border:1px solid #233752;border-radius:10px;font:12px/1.6 ui-monospace,Consolas,monospace;max-height:430px;overflow:auto;padding:16px}
+.test-actions{display:flex;gap:10px;flex-wrap:wrap}
+#copy-chatgpt{white-space:normal;text-align:center}
+.copy-feedback{font-size:13px;min-height:22px;margin:8px 0 0}
+#diagnostic-fallback{display:none;width:100%;min-height:140px;background:#081427;border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px;font:12px/1.4 monospace;margin-top:10px}
 .results{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 #snapshot{display:none;max-width:100%;border:1px solid var(--border);border-radius:12px;margin-top:12px}
 .steps{padding-left:20px;font-size:14px}.steps li{padding:5px 0}.small-note{border-left:3px solid #6794ab;padding-left:12px;font-size:13px}
 a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
-@media(max-width:700px){main{padding:23px 13px 40px}.panel{padding:17px}form,.results{grid-template-columns:1fr}form button{width:100%}.pill{margin-left:0}}
+@media(max-width:700px){main{padding:23px 13px 40px}.panel{padding:17px}form,.results{grid-template-columns:1fr}form button{width:100%}.test-actions{flex-direction:column}.pill{margin-left:0}}
 </style></head><body><main>
 <header><div class="eyebrow">BEPO LABS · GITHUB + RENDER</div><h1>Automatización de <span>MP3YT</span></h1>
 <p class="lead">Probá el flujo de la web real <a href="https://mp3yt.is/" target="_blank" rel="noopener noreferrer">mp3yt.is</a> con un navegador automático: pegar enlace, buscar, elegir MP3 o MP4 y observar qué ocurre en cada paso.</p></header>
@@ -33,8 +37,13 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <form id="test-form">
 <div><label for="url">Enlace de YouTube</label><input id="url" type="url" placeholder="https://www.youtube.com/watch?v=..." required autocomplete="off" spellcheck="false"></div>
 <div><label for="format">Formato solicitado</label><select id="format"><option value="mp3">MP3 · Audio</option><option value="mp4">MP4 · Video</option></select></div>
-<div><button type="submit" id="start">Ejecutar prueba</button></div>
+<div class="test-actions">
+<button type="submit" id="start">Ejecutar prueba</button>
+<button type="button" id="copy-chatgpt" class="button" disabled>Copiar diagnóstico para ChatGPT</button>
+</div>
 </form>
+<p id="copy-feedback" class="copy-feedback" role="status" aria-live="polite">Después de probar, tocá «Copiar diagnóstico para ChatGPT» y pegalo en nuestra conversación.</p>
+<textarea id="diagnostic-fallback" readonly aria-label="Diagnóstico para copiar manualmente"></textarea>
 <p id="browser-status" class="secondary">Consultando estado del navegador…</p>
 <div id="result-status" role="status" aria-live="polite">Todavía no se ejecutó ninguna prueba.</div>
 <p class="small-note">Esto automatiza <strong>MP3YT</strong>, no YouTube directamente. Muestra los pasos y respuestas HTTP del sitio; una respuesta HTTP 200 no significa necesariamente que haya terminado la conversión. No elude CAPTCHA ni restricciones.</p>
@@ -44,7 +53,7 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <section class="panel"><h2>Captura del navegador</h2><p class="secondary" id="screen-note">La imagen del resultado aparecerá después de la prueba.</p><img id="snapshot" alt="Captura de la página MP3YT tras ejecutar la automatización"></section>
 </div>
 <section class="panel">
-<div class="row"><h2>Respuesta y diagnóstico JSON</h2><button id="copy" class="button" type="button" disabled>Copiar</button></div>
+<div class="row"><h2>Respuesta y diagnóstico JSON</h2><button id="copy" class="button" type="button" disabled>Copiar JSON</button></div>
 <pre id="log">{ "status": "sin ejecutar" }</pre>
 </section>
 <section class="panel">
@@ -57,26 +66,73 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <script>
 const el=id=>document.getElementById(id);
 let current="";
+let lastTest=null;
+let lastHealth=null;
+let lastInspector=null;
 function showJson(value){current=JSON.stringify(value,null,2);el("log").textContent=current;el("copy").disabled=false}
+function setCopyReady(ready){
+  el("copy-chatgpt").disabled=!ready;
+  el("copy-feedback").textContent=ready?"Prueba finalizada. Ya podés copiar el diagnóstico completo para ChatGPT.":"Después de probar, tocá «Copiar diagnóstico para ChatGPT» y pegalo en nuestra conversación.";
+}
+function diagnosticText(){
+  const record=lastTest||{status:"No se ejecutó ninguna prueba."};
+  const screenshot=record.response?.data?.screenshot_url;
+  return [
+    "DIAGNÓSTICO DE MP3YT — PARA CHATGPT",
+    "",
+    "Analizá si la automatización de la interfaz pública MP3YT funcionó, en qué paso se detuvo y qué habría que ajustar. No se está usando yt-dlp: se usa Playwright sobre mp3yt.is.",
+    "IMPORTANTE: un HTTP 200 o seleccionar MP3/MP4 no demuestran que el archivo se haya convertido o descargado.",
+    "",
+    "Página de pruebas: "+location.origin,
+    "Fecha de copia: "+new Date().toISOString(),
+    "Formato solicitado: "+(record.format||el("format").value),
+    "Enlace de YouTube proporcionado: "+(record.url||el("url").value.trim()),
+    "Estado visible: "+el("result-status").textContent,
+    "",
+    "RESULTADO COMPLETO DE LA PRUEBA:",
+    JSON.stringify(record,null,2),
+    "",
+    "ESTADO DEL SERVIDOR Y NAVEGADOR:",
+    JSON.stringify(lastHealth||{error:"Estado aún no disponible"},null,2),
+    "",
+    "INSPECCIÓN HTML PÚBLICA (si se ejecutó):",
+    JSON.stringify(lastInspector||{note:"No se ejecutó la inspección HTML opcional."},null,2),
+    "",
+    "CAPTURA DEL NAVEGADOR:",
+    screenshot ? new URL(screenshot,location.origin).href : "Sin captura disponible.",
+    "Nota: el enlace a la captura caduca en 10 minutos y no incluye la imagen dentro del texto copiado. Si se necesita analizar visualmente, adjuntá una captura de pantalla.",
+    "",
+    "POR FAVOR: indicá qué pasos funcionaron, cuáles no, si hay evidencia de que finalizó la conversión y cómo corregir el proyecto."
+  ].join("\n");
+}
 async function health(){
  try{
    const r=await fetch("/api/health",{cache:"no-store"});
    const j=await r.json();
+   lastHealth={http_status:r.status,...j};
    const b=j.browser||{};
    const name={ready:"Navegador preparado para pruebas",installing:"Instalando Playwright y Chromium…",error:"No se pudo preparar Chromium: "+(b.error||"Error"),pending:"Preparando navegador…"}[b.status]||"Inicializando navegador…";
    el("browser-status").textContent=name;
    el("browser-status").className="secondary "+(b.status==="ready"?"success":b.status==="error"?"error":"");
- }catch(e){el("browser-status").textContent="No se pudo consultar el servidor: "+e.message}
+ }catch(e){lastHealth={error:e.message};el("browser-status").textContent="No se pudo consultar el servidor: "+e.message}
 }
 health();setInterval(health,16000);
 el("test-form").addEventListener("submit",async ev=>{
  ev.preventDefault();el("start").disabled=true;
+ setCopyReady(false);el("diagnostic-fallback").style.display="none";
+ const requestedAt=new Date().toISOString();
+ const testStarted=performance.now();
+ lastTest={started_at:requestedAt,url:el("url").value.trim(),format:el("format").value,status:"in_progress"};
  el("result-status").className="";el("result-status").textContent="El navegador de Render está probando MP3YT…";
  el("steps").replaceChildren();el("snapshot").style.display="none";
  el("screen-note").textContent="Capturando el resultado del navegador…";
  try{
    const response=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:el("url").value.trim(),format:el("format").value})});
-   const j=await response.json();showJson({http_status:response.status,...j});
+   const raw=await response.text();
+   let j;
+   try { j=JSON.parse(raw); } catch(err) { throw new Error("El servidor no devolvió JSON válido (HTTP "+response.status+"): "+raw.slice(0,1000)); }
+   lastTest={...lastTest,status:"completed",http_status:response.status,response:j,elapsed_client_seconds:Math.round((performance.now()-testStarted)/100)/10,finished_at:new Date().toISOString()};
+   showJson({http_status:response.status,...j});
    if(!response.ok || !j.ok)throw new Error(j.error||"No se pudo ejecutar la prueba.");
    const d=j.data;
    for(const st of (d.steps||[])){const li=document.createElement("li");li.textContent=(st.ok?"✓ ":"• ")+st.step+(st.detail?" — "+st.detail:"")+(st.http?" [HTTP "+st.http+"]":"");el("steps").append(li)}
@@ -89,16 +145,49 @@ el("test-form").addEventListener("submit",async ev=>{
    el("result-status").textContent=problems.length?"La prueba encontró un bloqueo o error. Mirá el diagnóstico.":completed?"MP3YT recibió el enlace y se seleccionó el formato. Revisá el resultado.":"Se inspeccionó MP3YT, pero no se pudo verificar la selección del formato.";
    el("result-status").className=problems.length?"error":completed?"success":"";
  }catch(err){
+   lastTest={...lastTest,status:"failed",client_error:String(err.message),elapsed_client_seconds:Math.round((performance.now()-testStarted)/100)/10,finished_at:new Date().toISOString()};
    el("result-status").textContent="Prueba no completada: "+err.message;
    el("result-status").className="error";
    if(!current)showJson({error:err.message});
- }finally{el("start").disabled=false;health()}
+ }finally{el("start").disabled=false;await health();setCopyReady(true)}
 });
-el("copy").addEventListener("click",async()=>{if(current){try{await navigator.clipboard.writeText(current)}catch(e){}}});
+async function copyText(text){
+  if(navigator.clipboard?.writeText){
+    try {await navigator.clipboard.writeText(text);return true;} catch(e){}
+  }
+  const field=el("diagnostic-fallback");
+  field.value=text;field.style.display="block";field.focus();field.select();
+  try {if(document.execCommand("copy")){field.style.display="none";return true;}}catch(e){}
+  return false;
+}
+el("copy").addEventListener("click",async()=>{
+  if(!current)return;
+  const ok=await copyText(current);
+  el("copy-feedback").textContent=ok?"JSON copiado.":"No se pudo copiar automáticamente. Seleccioná y copiá el texto mostrado abajo.";
+});
+el("copy-chatgpt").addEventListener("click",async()=>{
+  if(!lastTest)return;
+  const button=el("copy-chatgpt");button.disabled=true;
+  el("copy-feedback").textContent="Preparando diagnóstico para ChatGPT…";
+  await health();
+  const report=diagnosticText();
+  const copied=await copyText(report);
+  el("copy-feedback").textContent=copied
+     ?"¡Diagnóstico copiado! Volvé a ChatGPT y pegalo en el chat."
+     :"No se pudo copiar automáticamente. El diagnóstico está seleccionado abajo para copiarlo manualmente.";
+  button.disabled=false;
+});
 el("inspect").addEventListener("click",async()=>{
  el("inspect").disabled=true;el("inspect-log").textContent="Inspeccionando HTML público…";
- try{const r=await fetch("/api/scrape",{cache:"no-store"});el("inspect-log").textContent=JSON.stringify(await r.json(),null,2)}
- catch(e){el("inspect-log").textContent="Error: "+e.message}
+ try{
+   const r=await fetch("/api/scrape",{cache:"no-store"});
+   const data=await r.json();
+   lastInspector={http_status:r.status,...data};
+   el("inspect-log").textContent=JSON.stringify(lastInspector,null,2);
+ }catch(e){
+   lastInspector={error:e.message};
+   el("inspect-log").textContent="Error: "+e.message;
+ }
  finally{el("inspect").disabled=false}
 });
 </script></body></html>
