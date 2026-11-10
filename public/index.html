@@ -120,6 +120,7 @@ health();setInterval(health,16000);
 el("test-form").addEventListener("submit",async ev=>{
  ev.preventDefault();el("start").disabled=true;
  setCopyReady(false);el("diagnostic-fallback").style.display="none";
+ current="";el("copy").disabled=true;el("log").textContent="Esperando respuesta de la prueba…";
  const requestedAt=new Date().toISOString();
  const testStarted=performance.now();
  lastTest={started_at:requestedAt,url:el("url").value.trim(),format:el("format").value,status:"in_progress"};
@@ -148,7 +149,7 @@ el("test-form").addEventListener("submit",async ev=>{
    lastTest={...lastTest,status:"failed",client_error:String(err.message),elapsed_client_seconds:Math.round((performance.now()-testStarted)/100)/10,finished_at:new Date().toISOString()};
    el("result-status").textContent="Prueba no completada: "+err.message;
    el("result-status").className="error";
-   if(!current)showJson({error:err.message});
+   if(!current)showJson({client_error:err.message,request:lastTest});
  }finally{el("start").disabled=false;await health();setCopyReady(true)}
 });
 async function copyText(text){
@@ -169,7 +170,6 @@ el("copy-chatgpt").addEventListener("click",async()=>{
   if(!lastTest)return;
   const button=el("copy-chatgpt");button.disabled=true;
   el("copy-feedback").textContent="Preparando diagnóstico para ChatGPT…";
-  await health();
   const report=diagnosticText();
   const copied=await copyText(report);
   el("copy-feedback").textContent=copied
