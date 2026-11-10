@@ -230,9 +230,15 @@ def run_test(raw_url, fmt):
         raise RuntimeError("Hay otra prueba en marcha. Intentá nuevamente al terminar.")
     started = time.monotonic()
     events = []
+    network_errors = []
+    console_errors = []
     steps = []
     final = {}
     screen_url = None
+    verdict = {"status": "not_started", "detail": "No se empezó la prueba."}
+    observations = []
+    final_controls = []
+    wait_seconds = 0
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         with sync_playwright() as pw:
@@ -247,9 +253,15 @@ def run_test(raw_url, fmt):
             page.set_default_timeout(6500)
             page.on("response", lambda res: events.append({
                 "status": res.status,
-                "path": urlsplit(res.url).path[:140],
+                "path": urlsplit(res.url).path[:130],
                 "host": urlsplit(res.url).hostname,
-            }) if urlsplit(res.url).hostname in {"mp3yt.is", "www.mp3yt.is"} and len(events) < 35 else None)
+            }) if len(events) < 65 else None)
+            page.on("requestfailed", lambda req: network_errors.append({
+                "host": urlsplit(req.url).hostname,
+                "path": urlsplit(req.url).path[:110],
+                "error": str(req.failure or "Solicitud fallida")[:180],
+            }) if len(network_errors) < 20 else None)
+            page.on("pageerror", lambda exc: console_errors.append(str(exc)[:260]) if len(console_errors) < 12 else None)
             try:
                 nav = page.goto(SITE, wait_until="domcontentloaded", timeout=30000)
                 steps.append({"step":"open","ok":bool(nav and nav.status < 400), "http":nav.status if nav else None})
@@ -263,6 +275,7 @@ def run_test(raw_url, fmt):
                 ])
                 if form is None:
                     steps.append({"step":"find_form","ok":False,"detail":"No aparece un campo para pegar el enlace."})
+                    verdict = {"status": "form_not_found", "detail": "MP3YT abrió pero no mostró el formulario para pegar el enlace."}
                     final = _summary(page)
                 else:
                     form.fill(url, timeout=6500)
@@ -276,22 +289,28 @@ def run_test(raw_url, fmt):
                     else:
                         form.press("Enter", timeout=6500)
                     steps.append({"step":"submit_search","ok":True})
-                    page.wait_for_timeout(2500)
-                    note = _format_control(page, fmt)
-                    steps.append({"step":"select_format","detail":note,"ok":note.startswith("Se seleccionó")})
-                    page.wait_for_timeout(1500)
-                    convert_button = _first_visible([
-                        page.get_by_role("button", name=re.compile(r"^(convert|convertir|start conversion)$", re.I)),
-                    ])
-                    if convert_button is not None:
-                        convert_button.click(timeout=6500)
-                        steps.append({"step":"click_convert","ok":True})
-                        page.wait_for_timeout(2500)
-                    else:
-                        steps.append({"step":"click_convert","ok":False,"detail":"No se encontró un segundo botón Convert. Se muestra el estado actual."})
+                    page.wait_for_timeout(1800)
+                    steps.append({
+                        "step": "format_requested",
+                        "ok": True,
+                        "detail": "Se solicitó " + fmt.upper() + "; MP3YT puede prepararlo automáticamente. No se asumió que hubiera una pestaña ni un segundo botón «Convert»."
+                    })
+                    verdict, observations, wait_seconds, final_controls = _wait_for_format(page, fmt, deadline_seconds=45)
+                    steps.append({
+                        "step": "wait_for_download_option",
+                        "ok": verdict["status"] == "ready_to_download",
+                        "detail": verdict["detail"],
+                        "seconds": wait_seconds,
+                    })
+                    steps.append({
+                        "step": "file_download",
+                        "ok": False,
+                        "detail": "No se inició una descarga. Se comprobó únicamente la disponibilidad del botón de " + fmt.upper() + ".",
+                    })
                     final = _summary(page)
                 screen_url = record_screenshot(page.screenshot(type="png", full_page=False, timeout=10000))
             except Exception as exc:
+                verdict = {"status": "browser_error", "detail": str(exc)[:320]}
                 steps.append({"step":"browser_error","ok":False,"detail":str(exc)[:320]})
                 try:
                     final = _summary(page)
@@ -305,8 +324,11 @@ def run_test(raw_url, fmt):
             "target_site": SITE, "video_url":url, "format":fmt,
             "method":"Playwright browser UI automation — not yt-dlp",
             "steps":steps, "page":final, "http_responses":events,
+            "network_errors":network_errors, "page_errors":console_errors,
+            "verdict":verdict, "format_observations":observations, "final_controls":final_controls,
+            "wait_seconds":wait_seconds, "download_verified":False,
             "screenshot_url":screen_url, "elapsed_seconds":round(time.monotonic()-started,1),
-            "note":"Se inspecciona el flujo visible; no se evaden CAPTCHAs ni bloqueos, ni se usa API privada."
+            "note":"Ready_to_download solo significa que MP3YT mostró un botón de descarga habilitado. No se descargó ni validó el archivo. No se evaden bloqueos ni APIs privadas."
         }
     finally:
         browser_lock.release()
