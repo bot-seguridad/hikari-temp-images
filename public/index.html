@@ -1,138 +1,104 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#090e1c">
-<meta name="description" content="Laboratorio para inspeccionar el HTML público de MP3YT.">
-<title>MP3YT Inspector · Bepo Labs</title>
+<meta name="theme-color" content="#091224">
+<meta name="description" content="Automatización de pruebas del sitio público MP3YT desde Render">
+<title>MP3YT · Automatización web | Bepo Labs</title>
 <style>
-:root{color-scheme:dark;--bg:#080d19;--panel:#121b30;--line:#2e3c59;--txt:#edf4ff;--muted:#a7bbd6;--accent:#75dafa}
-*{box-sizing:border-box}body{margin:0;font:15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at top right,#17395b 0,transparent 42%),var(--bg);color:var(--txt)}
-main{max-width:1040px;margin:0 auto;padding:36px 19px 60px}
-header{padding:23px 0 26px}.eyebrow{font-weight:700;letter-spacing:.15em;font-size:11px;color:var(--accent)}
-h1{font-size:clamp(34px,6vw,56px);line-height:1.12;letter-spacing:-.04em;margin:12px 0}h1 span{color:var(--accent)}
-p{color:var(--muted);max-width:670px}a{color:var(--accent)}
-.panel{background:linear-gradient(165deg,#14203a,#10182a);border:1px solid var(--line);border-radius:17px;padding:22px;margin-bottom:18px;box-shadow:0 9px 30px #02050b22}
-.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px}
-.dot{width:9px;height:9px;border-radius:100%;background:#56dfa6;box-shadow:0 0 13px #56dfa680}
-.tag{margin-left:auto;color:#bdd3ec;border:1px solid #3a4b67;border-radius:999px;font-size:11px;padding:3px 9px}
-.actions{display:flex;flex-wrap:wrap;gap:12px;margin:19px 0}
-button,.button{background:#70d5f9;color:#04152a;border:none;border-radius:10px;padding:11px 19px;font:inherit;font-weight:750;cursor:pointer;transition:opacity .2s}
-button:hover{opacity:.87}button:disabled{opacity:.4;cursor:default}
-.button{display:inline-block;text-decoration:none;background:#23334d;color:#e6f4ff}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-h2{font-size:19px;margin:0 0 17px}h3{font-size:14px;color:#cdeaff;margin:17px 0 6px}
-dl{display:grid;grid-template-columns:120px 1fr;gap:8px;overflow-wrap:anywhere}dt{color:var(--muted)}dd{margin:0}ul{padding-left:19px;overflow-wrap:anywhere}li{margin-bottom:5px}
-pre{padding:18px;background:#090f1e;border:1px solid #253450;border-radius:11px;overflow:auto;max-height:440px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
-#status{min-height:25px;font-weight:650}.success{color:#79ecc0}.error{color:#ff98aa}
-footer{font-size:12px;color:var(--muted);line-height:1.7;margin-top:15px}
-@media(max-width:700px){main{padding:18px 13px 40px}.grid{grid-template-columns:1fr}.panel{padding:17px}dl{grid-template-columns:95px 1fr}.tag{margin-left:0}}
-
-.media-form{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:12px;align-items:end;margin:18px 0}
-.media-form label{display:block;color:#bed4ec;font-size:13px;font-weight:700;margin-bottom:5px}
-.media-form input,.media-form select{background:#091328;border:1px solid #3c5573;color:#edf5ff;border-radius:10px;width:100%;min-height:46px;padding:11px 12px;font:inherit}
-.media-form button{min-height:46px;white-space:nowrap}
-.engine-status{font-size:13px;color:#a9c3de}
-.download-action{display:inline-block;margin:12px 0;padding:10px 18px;background:#79ebbf;color:#09241d;border-radius:9px;text-decoration:none;font-weight:750}
-.convert-log{max-height:250px}
-.media-note{border-left:3px solid #608eab;padding-left:12px;font-size:13px}
-@media(max-width:700px){.media-form{grid-template-columns:1fr}.media-form button{width:100%}}
-
+:root{color-scheme:dark;--bg:#070d19;--panel:#111d33;--border:#2b3e5b;--text:#edf6ff;--muted:#a8bdd6;--blue:#75dcff;--green:#88edc2}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top right,#173c61 0%,transparent 48%),var(--bg);color:var(--text);font:15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:960px;margin:0 auto;padding:38px 18px 70px}h1{font-size:clamp(34px,6vw,55px);line-height:1.1;letter-spacing:-.035em;margin:10px 0 12px}h1 span{color:var(--blue)}
+h2{font-size:19px;margin:0 0 12px}p{color:var(--muted)}.lead{max-width:700px}.eyebrow{font-size:11px;font-weight:800;letter-spacing:.15em;color:var(--blue)}
+.panel{margin:20px 0;border:1px solid var(--border);background:linear-gradient(150deg,#15233b,#0e192b);padding:24px;border-radius:17px}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.status-indicator{width:10px;height:10px;border-radius:100%;background:var(--green);box-shadow:0 0 12px #88edc288}
+.pill{border:1px solid #486077;border-radius:50px;padding:3px 10px;color:#d8e9fd;font-size:12px;margin-left:auto}
+form{display:grid;grid-template-columns:minmax(0,1fr) 135px auto;gap:12px;align-items:end;margin-top:22px}
+label{display:block;color:#bcd5ee;font-size:13px;font-weight:700;margin-bottom:6px}
+input,select{min-height:47px;padding:11px;border:1px solid #3b5373;background:#081427;border-radius:10px;color:var(--text);width:100%;font:inherit}
+button,.button{display:inline-block;text-decoration:none;font:inherit;font-weight:750;padding:11px 17px;border-radius:10px;border:0;cursor:pointer;background:var(--blue);color:#092238;white-space:nowrap}
+button:disabled{opacity:.5;cursor:wait}.button{background:#243853;color:#e9f6ff}
+.secondary{font-size:13px;color:var(--muted)}.error{color:#ff9dac}.success{color:var(--green)}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#071124;border:1px solid #233752;border-radius:10px;font:12px/1.6 ui-monospace,Consolas,monospace;max-height:430px;overflow:auto;padding:16px}
+.results{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+#snapshot{display:none;max-width:100%;border:1px solid var(--border);border-radius:12px;margin-top:12px}
+.steps{padding-left:20px;font-size:14px}.steps li{padding:5px 0}.small-note{border-left:3px solid #6794ab;padding-left:12px;font-size:13px}
+a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
+@media(max-width:700px){main{padding:23px 13px 40px}.panel{padding:17px}form,.results{grid-template-columns:1fr}form button{width:100%}.pill{margin-left:0}}
 </style></head><body><main>
-<header><div class="eyebrow">BEPO LABS · GITHUB + RENDER</div><h1>Inspector de <span>MP3YT</span></h1>
-<p>Probá la extracción del HTML público de <a href="https://mp3yt.is/" target="_blank" rel="noopener noreferrer">mp3yt.is</a> desde un servidor Render. Mirá la estructura, los formularios y las respuestas del sitio.</p></header>
-
-<section class="panel" id="converter">
-<div class="top"><span class="dot"></span><strong>Laboratorio de conversión MP3 / MP4</strong><span class="tag">Pruebas reales en Render</span></div>
-<p>Pegá un enlace de un video de YouTube que tengas permiso para descargar. El servidor intentará obtener el archivo y convertirlo al formato elegido, o te mostrará el error real.</p>
-<form id="media-form" class="media-form">
-<div><label for="yt-url">Enlace de YouTube</label><input id="yt-url" name="url" type="url" required autocomplete="off" spellcheck="false" placeholder="https://www.youtube.com/watch?v=..."></div>
-<div><label for="media-format">Formato</label><select id="media-format" name="format"><option value="mp3">MP3 · audio</option><option value="mp4">MP4 · video</option></select></div>
-<div><button id="convert-button" type="submit">Probar conversión</button></div>
-</form>
-<div id="engine-status" class="engine-status" aria-live="polite">Consultando estado del motor de conversión…</div>
-<div id="conversion-status" role="status" aria-live="polite"></div>
-<div id="conversion-link"></div>
-<h3>Registro de la última prueba</h3>
-<pre id="conversion-log" class="convert-log">Todavía no se ejecutó ninguna conversión.</pre>
-<p class="media-note"><strong>Cómo funciona:</strong> esta conversión de prueba consulta YouTube mediante yt-dlp y FFmpeg, <strong>no</strong> utiliza la conversión interna de MP3YT. Límite: videos de hasta 10 minutos, 35 MB de archivo final, MP4 hasta 480p y archivos temporales por 10 minutos. Algunas peticiones desde Render pueden ser bloqueadas por YouTube.</p>
-</section>
-
+<header><div class="eyebrow">BEPO LABS · GITHUB + RENDER</div><h1>Automatización de <span>MP3YT</span></h1>
+<p class="lead">Probá el flujo de la web real <a href="https://mp3yt.is/" target="_blank" rel="noopener noreferrer">mp3yt.is</a> con un navegador automático: pegar enlace, buscar, elegir MP3 o MP4 y observar qué ocurre en cada paso.</p></header>
 <section class="panel">
-<div class="top"><span class="dot"></span><strong>Scraping en vivo</strong><span class="tag">Destino fijo · HTTPS</span></div>
-<p>Se extraen título, encabezados, campos, formularios, botones y enlaces públicos. No se ejecuta conversión de video ni se usan APIs privadas.</p>
-<div class="actions"><button id="run">Ejecutar prueba</button><a class="button" href="/api/health" target="_blank">Estado del servidor</a></div>
-<div id="status" role="status" aria-live="polite">Preparado para comenzar.</div>
+<div class="row"><span class="status-indicator"></span><strong>Prueba del sitio MP3YT</strong><span class="pill">Playwright · Navegador real</span></div>
+<form id="test-form">
+<div><label for="url">Enlace de YouTube</label><input id="url" type="url" placeholder="https://www.youtube.com/watch?v=..." required autocomplete="off" spellcheck="false"></div>
+<div><label for="format">Formato solicitado</label><select id="format"><option value="mp3">MP3 · Audio</option><option value="mp4">MP4 · Video</option></select></div>
+<div><button type="submit" id="start">Ejecutar prueba</button></div>
+</form>
+<p id="browser-status" class="secondary">Consultando estado del navegador…</p>
+<div id="result-status" role="status" aria-live="polite">Todavía no se ejecutó ninguna prueba.</div>
+<p class="small-note">Esto automatiza <strong>MP3YT</strong>, no YouTube directamente. Muestra los pasos y respuestas HTTP del sitio; una respuesta HTTP 200 no significa necesariamente que haya terminado la conversión. No elude CAPTCHA ni restricciones.</p>
 </section>
-<div class="grid"><section class="panel"><h2>Resumen</h2><div id="summary">Todavía no hay resultados.</div></section>
-<section class="panel"><h2>Componentes detectados</h2><div id="components">Ejecutá la prueba para ver resultados.</div></section></div>
-<section class="panel"><div class="top"><h2>Respuesta JSON</h2><button id="copy" class="button" disabled style="margin-left:auto">Copiar JSON</button></div><pre id="json">{ "status": "sin ejecutar" }</pre></section>
-<footer>Laboratorio de prueba; caché de 90 segundos para evitar solicitudes repetidas. Si el sitio limita las peticiones (403/429), el error se informa sin intentar eludirlo.</footer>
+<div class="results">
+<section class="panel"><h2>Pasos realizados</h2><ol class="steps" id="steps"><li>Esperando una prueba.</li></ol></section>
+<section class="panel"><h2>Captura del navegador</h2><p class="secondary" id="screen-note">La imagen del resultado aparecerá después de la prueba.</p><img id="snapshot" alt="Captura de la página MP3YT tras ejecutar la automatización"></section>
+</div>
+<section class="panel">
+<div class="row"><h2>Respuesta y diagnóstico JSON</h2><button id="copy" class="button" type="button" disabled>Copiar</button></div>
+<pre id="log">{ "status": "sin ejecutar" }</pre>
+</section>
+<section class="panel">
+<div class="row"><h2>Inspector HTML público</h2><button id="inspect" class="button" type="button">Inspeccionar MP3YT</button><a class="button" href="/api/health" target="_blank" rel="noopener">Estado del servidor</a></div>
+<p class="secondary">Esta prueba adicional lee el HTML público de la portada sin iniciar una conversión.</p>
+<pre id="inspect-log">Sin ejecutar.</pre>
+</section>
+<footer>Solo para pruebas con contenido autorizado. La página puede cambiar sus controles, impedir automatizaciones o mostrar protecciones de seguridad. Las capturas temporales caducan en 10 minutos.</footer>
 </main>
 <script>
 const el=id=>document.getElementById(id);
-let lastJson="";
-function p(tag,txt){const x=document.createElement(tag);x.textContent=String(txt);return x}
-function section(target,label,values){target.append(p("h3",label+" ("+values.length+")"));const ul=p("ul","");for(const v of values)ul.append(p("li",v));target.append(ul)}
-el("run").addEventListener("click",async function(){
- this.disabled=true;el("status").className="";el("status").textContent="Consultando MP3YT desde Render…";
- try{
-  const resp=await fetch("/api/scrape",{cache:"no-store"});const j=await resp.json();
-  lastJson=JSON.stringify(j,null,2);el("json").textContent=lastJson;el("copy").disabled=false;
-  if(!j.ok)throw Error(j.error||"Error no especificado");
-  const d=j.data;const dl=document.createElement("dl");
-  for(const [k,v] of [["Título",d.title],["URL final",d.final_url],["Descripción",d.description],["Caché (segundos)",d.cache_age_seconds]]){dl.append(p("dt",k),p("dd",v||"—"))}
-  el("summary").replaceChildren(dl);const parts=el("components");parts.replaceChildren();
-  section(parts,"Encabezados",d.headings.map(x=>x.level.toUpperCase()+": "+x.text));
-  section(parts,"Campos",d.inputs.map(x=>(x.type||"text")+" · "+(x.name||"(sin nombre)")+" · "+(x.placeholder||"")));
-  section(parts,"Botones",d.buttons);section(parts,"Formularios",d.forms.map(x=>x.method+" "+(x.action||"(sin acción)")));
-  section(parts,"Enlaces",d.links);
-  el("status").textContent="Prueba completada: "+d.headings.length+" encabezados, "+d.inputs.length+" campos y "+d.forms.length+" formularios.";
-  el("status").className="success";
- }catch(e){el("status").textContent="Error: "+e.message;el("status").className="error"}
- finally{this.disabled=false}
-});
-el("copy").addEventListener("click",async()=>{if(!lastJson)return;try{await navigator.clipboard.writeText(lastJson);el("status").textContent="JSON copiado al portapapeles"}catch(e){el("status").textContent="No se pudo copiar automáticamente"}});
-
-async function checkEngine(){
+let current="";
+function showJson(value){current=JSON.stringify(value,null,2);el("log").textContent=current;el("copy").disabled=false}
+async function health(){
  try{
    const r=await fetch("/api/health",{cache:"no-store"});
-   const j=await r.json();const e=j.conversion_engine||{};
-   el("engine-status").textContent=e.status==="ready"?"Motor yt-dlp + FFmpeg: listo para pruebas":
-     e.status==="installing"?"Preparando yt-dlp y FFmpeg en Render…":
-     e.status==="error"?"Motor no disponible: "+(e.error||"Error al iniciar"):
-     "Inicializando motor…";
-   el("engine-status").className="engine-status "+(e.status==="ready"?"success":e.status==="error"?"error":"");
- }catch(err){el("engine-status").textContent="Error al consultar el motor: "+err.message}
+   const j=await r.json();
+   const b=j.browser||{};
+   const name={ready:"Navegador preparado para pruebas",installing:"Instalando Playwright y Chromium…",error:"No se pudo preparar Chromium: "+(b.error||"Error"),pending:"Preparando navegador…"}[b.status]||"Inicializando navegador…";
+   el("browser-status").textContent=name;
+   el("browser-status").className="secondary "+(b.status==="ready"?"success":b.status==="error"?"error":"");
+ }catch(e){el("browser-status").textContent="No se pudo consultar el servidor: "+e.message}
 }
-checkEngine();
-setInterval(checkEngine,15000);
-el("media-form").addEventListener("submit",async event=>{
- event.preventDefault();
- const button=el("convert-button");button.disabled=true;
- const status=el("conversion-status");status.className="";status.textContent="Procesando enlace y formato en el servidor de Render…";
- el("conversion-link").replaceChildren();el("conversion-log").textContent="Solicitud enviada. El diagnóstico aparecerá cuando termine.";
- const t=Date.now();
+health();setInterval(health,16000);
+el("test-form").addEventListener("submit",async ev=>{
+ ev.preventDefault();el("start").disabled=true;
+ el("result-status").className="";el("result-status").textContent="El navegador de Render está probando MP3YT…";
+ el("steps").replaceChildren();el("snapshot").style.display="none";
+ el("screen-note").textContent="Capturando el resultado del navegador…";
  try{
-   const response=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({url:el("yt-url").value.trim(),format:el("media-format").value})});
-   const data=await response.json();
-   if(!response.ok || !data.ok){
-     el("conversion-log").textContent=JSON.stringify({status_http:response.status,...data},null,2);
-     throw new Error(data.error||"El servidor no pudo completar la prueba.");
-   }
-   const d=data.data;
-   status.textContent="Conversión terminada: "+d.format.toUpperCase()+" · "+(d.bytes/1048576).toFixed(2)+" MB · "+d.seconds+" s";
-   status.className="success";
-   const link=document.createElement("a");
-   link.className="download-action";link.href=d.download_url;link.textContent="Descargar "+d.format.toUpperCase();
-   link.setAttribute("download","youtube-prueba."+d.format);
-   el("conversion-link").append(link);
-   el("conversion-log").textContent=JSON.stringify({http_status:response.status,...d},null,2);
+   const response=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:el("url").value.trim(),format:el("format").value})});
+   const j=await response.json();showJson({http_status:response.status,...j});
+   if(!response.ok || !j.ok)throw new Error(j.error||"No se pudo ejecutar la prueba.");
+   const d=j.data;
+   for(const st of (d.steps||[])){const li=document.createElement("li");li.textContent=(st.ok?"✓ ":"• ")+st.step+(st.detail?" — "+st.detail:"")+(st.http?" [HTTP "+st.http+"]":"");el("steps").append(li)}
+   if(d.screenshot_url && /^\/api\/screenshot\/[a-f0-9]{32}$/.test(d.screenshot_url)){
+      el("snapshot").src=d.screenshot_url;el("snapshot").style.display="block";
+      el("screen-note").textContent="Captura de lo que vio el navegador en MP3YT.";
+   }else{el("screen-note").textContent="La página no pudo obtener una captura."}
+   const completed=(d.steps||[]).some(s=>s.step==="select_format"&&s.ok);
+   const problems=(d.steps||[]).filter(s=>s.step==="browser_error"||s.step==="find_form");
+   el("result-status").textContent=problems.length?"La prueba encontró un bloqueo o error. Mirá el diagnóstico.":completed?"MP3YT recibió el enlace y se seleccionó el formato. Revisá el resultado.":"Se inspeccionó MP3YT, pero no se pudo verificar la selección del formato.";
+   el("result-status").className=problems.length?"error":completed?"success":"";
  }catch(err){
-   status.className="error";status.textContent="Prueba fallida: "+err.message;
- }finally{
-   button.disabled=false;checkEngine();
- }
+   el("result-status").textContent="Prueba no completada: "+err.message;
+   el("result-status").className="error";
+   if(!current)showJson({error:err.message});
+ }finally{el("start").disabled=false;health()}
 });
-
+el("copy").addEventListener("click",async()=>{if(current){try{await navigator.clipboard.writeText(current)}catch(e){}}});
+el("inspect").addEventListener("click",async()=>{
+ el("inspect").disabled=true;el("inspect-log").textContent="Inspeccionando HTML público…";
+ try{const r=await fetch("/api/scrape",{cache:"no-store"});el("inspect-log").textContent=JSON.stringify(await r.json(),null,2)}
+ catch(e){el("inspect-log").textContent="Error: "+e.message}
+ finally{el("inspect").disabled=false}
+});
 </script></body></html>
