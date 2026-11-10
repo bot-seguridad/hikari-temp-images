@@ -46,7 +46,7 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <textarea id="diagnostic-fallback" readonly aria-label="Diagnóstico para copiar manualmente"></textarea>
 <p id="browser-status" class="secondary">Consultando estado del navegador…</p>
 <div id="result-status" role="status" aria-live="polite">Todavía no se ejecutó ninguna prueba.</div>
-<p class="small-note">Esto automatiza <strong>MP3YT</strong>, no YouTube directamente. Después de enviar el enlace espera hasta 45 segundos a que aparezca <strong>Download MP3</strong> o <strong>Download MP4</strong>. Un botón listo no prueba que el archivo sea válido; no descargamos archivos ni eludimos CAPTCHA o restricciones.</p>
+<p class="small-note">Esto automatiza <strong>MP3YT</strong>, no YouTube directamente. Primero espera el botón del formato elegido, después lo pulsa y comprueba si Chromium recibe un archivo con una cabecera MP3/MP4 válida. El archivo se usa solo para la prueba y se borra al cerrar el navegador. No se eluden CAPTCHA ni restricciones.</p>
 </section>
 <div class="results">
 <section class="panel"><h2>Pasos realizados</h2><ol class="steps" id="steps"><li>Esperando una prueba.</li></ol></section>
@@ -81,7 +81,7 @@ function diagnosticText(){
     "DIAGNÓSTICO DE MP3YT — PARA CHATGPT",
     "",
     "Analizá si la automatización de la interfaz pública MP3YT funcionó, en qué paso se detuvo y qué habría que ajustar. No se está usando yt-dlp: se usa Playwright sobre mp3yt.is.",
-    "IMPORTANTE: el resultado «ready_to_download» confirma solo un botón habilitado; no verifica la descarga ni la validez del archivo. Un HTTP 200 tampoco acredita conversión exitosa.",
+    "IMPORTANTE: «download_verified» requiere que Chromium haya recibido un archivo con la cabecera MP3/MP4 correcta. «ready_to_download» solo confirma un botón visible. Los archivos de prueba no se conservan ni se ofrecen para descargar desde este panel.",
     "",
     "Página de pruebas: "+location.origin,
     "Fecha de copia: "+new Date().toISOString(),
@@ -143,9 +143,16 @@ el("test-form").addEventListener("submit",async ev=>{
    }else{el("screen-note").textContent="La página no pudo obtener una captura."}
    const verdict=d.verdict||{};
    const checkedFormat=(d.format||el("format").value).toUpperCase();
-   if(verdict.status==="ready_to_download"){
-     el("result-status").textContent="MP3YT muestra «Download "+checkedFormat+"» habilitado. El archivo todavía NO se descargó ni verificó.";
+   if(verdict.status==="download_verified"){
+     const info=d.download_result||{};
+     el("result-status").textContent="¡Prueba confirmada! MP3YT entregó un archivo con cabecera "+checkedFormat+" válida ("+((info.bytes||0)/1048576).toFixed(2)+" MB). El archivo temporal no se conserva.";
      el("result-status").className="success";
+   }else if(verdict.status==="download_invalid_or_failed"){
+     el("result-status").textContent="El botón de MP3YT inició la descarga pero el archivo no pudo validarse. Consultá el diagnóstico para ver el motivo.";
+     el("result-status").className="error";
+   }else if(verdict.status==="download_not_confirmed"){
+     el("result-status").textContent="Se pulsó Download "+checkedFormat+", pero Chromium no registró una descarga completa. Revisá las respuestas de red y los eventos del navegador.";
+     el("result-status").className="error";
    }else if(verdict.status==="timeout_preparing"){
      el("result-status").textContent="MP3YT seguía preparando "+checkedFormat+" después de "+(d.wait_seconds||45)+" segundos. Descarga NO confirmada.";
      el("result-status").className="error";
