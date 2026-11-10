@@ -180,10 +180,10 @@ def _download_controls(page):
 def _target_state(controls, fmt):
     """No confundir un clic o un botón de otro formato con una conversión lista."""
     upper = fmt.upper()
-    ready = [c for c in controls if re.search(r"\\b(?:download|descargar|baixar)\\s+" + upper + r"\\b", c["label"], re.I) and c["enabled"]]
+    ready = [c for c in controls if re.search(r"\b(?:download|descargar|baixar)\s+" + upper + r"\b", c["label"], re.I) and c["enabled"]]
     if ready:
         return {"status": "ready_to_download", "detail": "MP3YT muestra un control habilitado de descarga " + upper + ". No se descargó ni validó el archivo.", "control": ready[0]}
-    disabled_ready = [c for c in controls if re.search(r"\\b(?:download|descargar|baixar)\\s+" + upper + r"\\b", c["label"], re.I)]
+    disabled_ready = [c for c in controls if re.search(r"\b(?:download|descargar|baixar)\s+" + upper + r"\b", c["label"], re.I)]
     if disabled_ready:
         return {"status": "download_disabled", "detail": "El botón de " + upper + " sigue deshabilitado.", "control": disabled_ready[0]}
     preparing = [c for c in controls if re.search(r"prepar|converting|processing|generating|please wait|cargando|procesando", c["label"], re.I)]
@@ -304,7 +304,8 @@ def run_test(raw_url, fmt):
                     })
                     steps.append({
                         "step": "file_download",
-                        "ok": False,
+                        "ok": None,
+                        "attempted": False,
                         "detail": "No se inició una descarga. Se comprobó únicamente la disponibilidad del botón de " + fmt.upper() + ".",
                     })
                     final = _summary(page)
