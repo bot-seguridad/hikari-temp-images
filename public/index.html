@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#090e1c">
+<meta name="description" content="Laboratorio para inspeccionar el HTML público de MP3YT.">
+<title>MP3YT Inspector · Bepo Labs</title>
+<style>
+:root{color-scheme:dark;--bg:#080d19;--panel:#121b30;--line:#2e3c59;--txt:#edf4ff;--muted:#a7bbd6;--accent:#75dafa}
+*{box-sizing:border-box}body{margin:0;font:15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at top right,#17395b 0,transparent 42%),var(--bg);color:var(--txt)}
+main{max-width:1040px;margin:0 auto;padding:36px 19px 60px}
+header{padding:23px 0 26px}.eyebrow{font-weight:700;letter-spacing:.15em;font-size:11px;color:var(--accent)}
+h1{font-size:clamp(34px,6vw,56px);line-height:1.12;letter-spacing:-.04em;margin:12px 0}h1 span{color:var(--accent)}
+p{color:var(--muted);max-width:670px}a{color:var(--accent)}
+.panel{background:linear-gradient(165deg,#14203a,#10182a);border:1px solid var(--line);border-radius:17px;padding:22px;margin-bottom:18px;box-shadow:0 9px 30px #02050b22}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px}
+.dot{width:9px;height:9px;border-radius:100%;background:#56dfa6;box-shadow:0 0 13px #56dfa680}
+.tag{margin-left:auto;color:#bdd3ec;border:1px solid #3a4b67;border-radius:999px;font-size:11px;padding:3px 9px}
+.actions{display:flex;flex-wrap:wrap;gap:12px;margin:19px 0}
+button,.button{background:#70d5f9;color:#04152a;border:none;border-radius:10px;padding:11px 19px;font:inherit;font-weight:750;cursor:pointer;transition:opacity .2s}
+button:hover{opacity:.87}button:disabled{opacity:.4;cursor:default}
+.button{display:inline-block;text-decoration:none;background:#23334d;color:#e6f4ff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+h2{font-size:19px;margin:0 0 17px}h3{font-size:14px;color:#cdeaff;margin:17px 0 6px}
+dl{display:grid;grid-template-columns:120px 1fr;gap:8px;overflow-wrap:anywhere}dt{color:var(--muted)}dd{margin:0}ul{padding-left:19px;overflow-wrap:anywhere}li{margin-bottom:5px}
+pre{padding:18px;background:#090f1e;border:1px solid #253450;border-radius:11px;overflow:auto;max-height:440px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+#status{min-height:25px;font-weight:650}.success{color:#79ecc0}.error{color:#ff98aa}
+footer{font-size:12px;color:var(--muted);line-height:1.7;margin-top:15px}
+@media(max-width:700px){main{padding:18px 13px 40px}.grid{grid-template-columns:1fr}.panel{padding:17px}dl{grid-template-columns:95px 1fr}.tag{margin-left:0}}
+</style></head><body><main>
+<header><div class="eyebrow">BEPO LABS · GITHUB + RENDER</div><h1>Inspector de <span>MP3YT</span></h1>
+<p>Probá la extracción del HTML público de <a href="https://mp3yt.is/" target="_blank" rel="noopener noreferrer">mp3yt.is</a> desde un servidor Render. Mirá la estructura, los formularios y las respuestas del sitio.</p></header>
+<section class="panel">
+<div class="top"><span class="dot"></span><strong>Scraping en vivo</strong><span class="tag">Destino fijo · HTTPS</span></div>
+<p>Se extraen título, encabezados, campos, formularios, botones y enlaces públicos. No se ejecuta conversión de video ni se usan APIs privadas.</p>
+<div class="actions"><button id="run">Ejecutar prueba</button><a class="button" href="/api/health" target="_blank">Estado del servidor</a></div>
+<div id="status" role="status" aria-live="polite">Preparado para comenzar.</div>
+</section>
+<div class="grid"><section class="panel"><h2>Resumen</h2><div id="summary">Todavía no hay resultados.</div></section>
+<section class="panel"><h2>Componentes detectados</h2><div id="components">Ejecutá la prueba para ver resultados.</div></section></div>
+<section class="panel"><div class="top"><h2>Respuesta JSON</h2><button id="copy" class="button" disabled style="margin-left:auto">Copiar JSON</button></div><pre id="json">{ "status": "sin ejecutar" }</pre></section>
+<footer>Laboratorio de prueba; caché de 90 segundos para evitar solicitudes repetidas. Si el sitio limita las peticiones (403/429), el error se informa sin intentar eludirlo.</footer>
+</main>
+<script>
+const el=id=>document.getElementById(id);
+let lastJson="";
+function p(tag,txt){const x=document.createElement(tag);x.textContent=String(txt);return x}
+function section(target,label,values){target.append(p("h3",label+" ("+values.length+")"));const ul=p("ul","");for(const v of values)ul.append(p("li",v));target.append(ul)}
+el("run").addEventListener("click",async function(){
+ this.disabled=true;el("status").className="";el("status").textContent="Consultando MP3YT desde Render…";
+ try{
+  const resp=await fetch("/api/scrape",{cache:"no-store"});const j=await resp.json();
+  lastJson=JSON.stringify(j,null,2);el("json").textContent=lastJson;el("copy").disabled=false;
+  if(!j.ok)throw Error(j.error||"Error no especificado");
+  const d=j.data;const dl=document.createElement("dl");
+  for(const [k,v] of [["Título",d.title],["URL final",d.final_url],["Descripción",d.description],["Caché (segundos)",d.cache_age_seconds]]){dl.append(p("dt",k),p("dd",v||"—"))}
+  el("summary").replaceChildren(dl);const parts=el("components");parts.replaceChildren();
+  section(parts,"Encabezados",d.headings.map(x=>x.level.toUpperCase()+": "+x.text));
+  section(parts,"Campos",d.inputs.map(x=>(x.type||"text")+" · "+(x.name||"(sin nombre)")+" · "+(x.placeholder||"")));
+  section(parts,"Botones",d.buttons);section(parts,"Formularios",d.forms.map(x=>x.method+" "+(x.action||"(sin acción)")));
+  section(parts,"Enlaces",d.links);
+  el("status").textContent="Prueba completada: "+d.headings.length+" encabezados, "+d.inputs.length+" campos y "+d.forms.length+" formularios.";
+  el("status").className="success";
+ }catch(e){el("status").textContent="Error: "+e.message;el("status").className="error"}
+ finally{this.disabled=false}
+});
+el("copy").addEventListener("click",async()=>{if(!lastJson)return;try{await navigator.clipboard.writeText(lastJson);el("status").textContent="JSON copiado al portapapeles"}catch(e){el("status").textContent="No se pudo copiar automáticamente"}});
+</script></body></html>
