@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from scraper import scrape_public_page
 from mp3yt_browser import begin_setup, engine_status, get_screenshot, run_test
 from fast_cnv import fast_convert
+from provider_diagnostics import compare_profiles
 
 BASE = Path(__file__).resolve().parent
 CACHE_SECONDS = 90
@@ -44,7 +45,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return self.send_json({"ok": True, "target": "https://mp3yt.is/",
                 "mode": "mp3yt-browser-and-cnv-direct", "browser": engine_status(),
-                "fast_cnv": {"available": True, "providers": ["mp3yt"], "returns": "url-only", "max_active": 2, "max_waiting": 6}})
+                "fast_cnv": {"available": True, "providers": ["mp3yt"], "returns": "url-only", "max_active": 2, "max_waiting": 6},
+                "provider_comparison": {"available": True, "profiles": ["mp3yt", "y2meta-uk"], "cooldown_seconds": 12}})
         if path == "/api/scrape":
             try:
                 with lock:
@@ -72,7 +74,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         action = urlsplit(self.path).path
-        if action not in {"/api/convert", "/api/fast"}:
+        if action not in {"/api/convert", "/api/fast", "/api/providers/test"}:
             return self.send_json({"ok": False, "error": "Endpoint desconocido."}, 404)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -83,7 +85,12 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 return self.send_json({"ok": False, "error": "JSON inválido."}, 400)
-            if action == "/api/fast":
+            if action == "/api/providers/test":
+                data = compare_profiles(
+                    payload.get("url", ""), payload.get("format", ""),
+                    payload.get("audioBitrate", "320"), payload.get("videoQuality", "720"),
+                )
+            elif action == "/api/fast":
                 data = fast_convert(
                     payload.get("url", ""), payload.get("format", ""),
                     payload.get("audioBitrate", "320"),
@@ -96,7 +103,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": False, "error": str(exc)}, 400)
         except RuntimeError as exc:
             error = str(exc)
-            status = 503 if "aún no está listo" in error else 429 if ("otra prueba" in error or "Demasiadas consultas" in error or "Servidor ocupado" in error or "HTTP 429" in error) else 502
+            status = 503 if "aún no está listo" in error else 429 if ("otra prueba" in error or "Demasiadas consultas" in error or "Servidor ocupado" in error or "HTTP 429" in error or "Prueba comparativa en pausa" in error or "otra comparación" in error) else 502
             return self.send_json({"ok": False, "error": error}, status)
         except Exception as exc:
             print("[mp3yt] Error inesperado en prueba: " + str(exc)[:300], flush=True)
