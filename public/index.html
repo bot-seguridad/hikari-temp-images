@@ -22,6 +22,16 @@ button:disabled{opacity:.5;cursor:wait}.button{background:#243853;color:#e9f6ff}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#071124;border:1px solid #233752;border-radius:10px;font:12px/1.6 ui-monospace,Consolas,monospace;max-height:430px;overflow:auto;padding:16px}
 .test-actions{display:flex;gap:10px;flex-wrap:wrap}
 #fast-start{background:#8af0be;color:#09281c}
+#providers-start{background:#ffe3a2;color:#31230c}
+.providers-result{border:1px solid #405976;border-radius:12px;background:#0a1729;padding:14px;margin-top:16px}
+.profiles-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.profile-card{border:1px solid #38516c;border-radius:10px;padding:14px;background:#0d1e32;overflow-wrap:anywhere}
+.profile-card strong{display:block;font-size:16px}
+.profile-card p{margin:5px 0;color:var(--muted);font-size:13px}
+.profile-card .success{color:var(--green)}
+.profile-card .error{color:#ff9dac}
+#providers-raw{max-height:390px}
+
 #fast-link{display:none;background:#8af0be;color:#09281c;margin:8px 0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .fast-result{padding:14px;background:#0a1729;border:1px solid #37516c;border-radius:11px;margin-top:14px}
 .fast-result h3{margin:0 0 6px;font-size:15px}
@@ -46,10 +56,19 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <div><label for="format">Formato solicitado</label><select id="format"><option value="mp3">MP3 · Audio</option><option value="mp4">MP4 · Video</option></select></div>
 <div class="test-actions">
 <button type="button" id="fast-start">Consultar rápido CNV</button>
+<button type="button" id="providers-start">Comparar proveedores</button>
 <button type="submit" id="start" class="button">Probar navegador MP3YT (lento)</button>
 <button type="button" id="copy-chatgpt" class="button" disabled>Copiar diagnóstico para ChatGPT</button>
 </div>
 </form>
+<div class="providers-result">
+<h3>Comparación de proveedores del bot</h3>
+<p class="secondary">Prueba de manera independiente los perfiles <strong>MP3YT</strong> y <strong>Y2meta</strong> usados por tu archivo cnv.mjs. Consulta a CNV con ambos y registra el paso exacto y el HTTP de cada uno. No descarga archivos ni muestra claves o enlaces temporales.</p>
+<div id="providers-status" role="status" aria-live="polite" class="secondary">Sin ejecutar. Elegí un enlace y tocá «Comparar proveedores».</div>
+<div id="profiles-grid" class="profiles-grid"></div>
+<pre id="providers-raw">{ "status": "sin ejecutar" }</pre>
+<p class="small-note">Para no sobrecargar CNV, los perfiles se prueban por separado y con una pausa. Si CNV responde 403/429, no se intenta evadir esa restricción probando otro origen. El resultado solo refleja el momento de la consulta.</p>
+</div>
 <div class="fast-result">
 <h3>Respuesta rápida de CNV</h3>
 <div id="fast-status" class="secondary" role="status" aria-live="polite">Pegá el enlace y elegí MP3 o MP4. Este modo solicita una URL al servicio CNV sin descargar el archivo en Render.</div>
@@ -83,6 +102,7 @@ const el=id=>document.getElementById(id);
 let current="";
 let lastTest=null;
 let lastFast=null;
+let lastProviders=null;
 let lastHealth=null;
 let lastInspector=null;
 function showJson(value){current=JSON.stringify(value,null,2);el("log").textContent=current;el("copy").disabled=false}
@@ -101,9 +121,12 @@ function diagnosticText(){
     "",
     "Página de pruebas: "+location.origin,
     "Fecha de copia: "+new Date().toISOString(),
-    "Formato solicitado: "+(lastFast?.format||record.format||el("format").value),
-    "Enlace de YouTube proporcionado: "+(lastFast?.url||record.url||el("url").value.trim()),
-    "Estado del modo ejecutado: "+(lastFast?el("fast-status").textContent:el("result-status").textContent),
+    "Formato solicitado: "+(lastProviders?.format||lastFast?.format||record.format||el("format").value),
+    "Enlace de YouTube proporcionado: "+(lastProviders?.url||lastFast?.url||record.url||el("url").value.trim()),
+    "Estado del modo ejecutado: "+(lastProviders?el("providers-status").textContent:lastFast?el("fast-status").textContent:el("result-status").textContent),
+    "",
+    "RESULTADO DE COMPARACIÓN DE PROVEEDORES:",
+    JSON.stringify(lastProviders||{note:"No se ejecutó la comparación."},null,2),
     "",
     "RESULTADO DE LA CONSULTA RÁPIDA CNV:",
     JSON.stringify(lastFast?{...lastFast,response:lastFast.response?{...lastFast.response,data:lastFast.response.data?{...lastFast.response.data,url:lastFast.response.data.url?"[URL omitida; host="+(lastFast.response.data.download_host||"?")+"]":null}:undefined}:undefined}:{note:"No se ejecutó la consulta rápida."},null,2),
@@ -121,7 +144,7 @@ function diagnosticText(){
     screenshot ? new URL(screenshot,location.origin).href : "Sin captura disponible.",
     "Nota: el enlace a la captura caduca en 10 minutos y no incluye la imagen dentro del texto copiado. Si se necesita analizar visualmente, adjuntá una captura de pantalla.",
     "",
-    "POR FAVOR: indicá qué pasos funcionaron, cuáles no, si hay evidencia de que finalizó la conversión y cómo corregir el proyecto."
+"POR FAVOR: determiná qué perfil falló (MP3YT/Y2meta), si fue en la obtención de clave o la conversión, los HTTP exactos y recomendaciones para el archivo cnv.mjs del bot. No asumir que una URL recibida implica una descarga validada."
   ].join("\n");
 }
 async function health(){
@@ -137,12 +160,83 @@ async function health(){
 }
 health();setInterval(health,16000);
 
+
+function renderProfiles(data){
+  const grid=el("profiles-grid");grid.replaceChildren();
+  for(const p of (data.profiles||[])){
+    const card=document.createElement("div");
+    card.className="profile-card";
+    const title=document.createElement("strong");
+    title.textContent=p.profile==="mp3yt"?"MP3YT":p.profile==="y2meta-uk"?"Y2meta":p.profile;
+    card.append(title);
+    const status=document.createElement("div");
+    status.className=p.status==="url_received"?"success":"error";
+    status.textContent=p.status==="url_received"?"✓ CNV devolvió URL":p.status.startsWith("skipped")?"• Prueba omitida":"✕ Falló ("+p.status+")";
+    card.append(status);
+    const notes=[
+      "Origen: "+(p.origin||"?"),
+      "Clave HTTP: "+(p.key_http_status??"no disponible"),
+      "Conversión HTTP: "+(p.converter_http_status??"no disponible"),
+      "Tiempo: "+(p.elapsed_ms??"?")+" ms",
+      "Resultado: "+(p.error||p.reason||p.download_host||"sin información"),
+    ];
+    for(const line of notes){const para=document.createElement("p");para.textContent=line;card.append(para)}
+    grid.append(card);
+  }
+}
+el("providers-start").addEventListener("click",async()=>{
+  if(!el("url").reportValidity())return;
+  const button=el("providers-start");
+  button.disabled=true;el("start").disabled=true;el("fast-start").disabled=true;
+  lastTest=null;lastFast=null;
+  el("fast-link").style.display="none";el("fast-link").removeAttribute("href");
+  el("result-status").textContent="No se ejecutó la prueba lenta; se compararon perfiles de CNV.";
+  setCopyReady(false);
+  const began=performance.now();
+  lastProviders={status:"in_progress",url:el("url").value.trim(),format:el("format").value,started_at:new Date().toISOString()};
+  el("profiles-grid").replaceChildren();
+  el("providers-status").className="secondary";
+  el("providers-status").textContent="Consultando MP3YT y Y2meta por separado. Puede tardar si CNV no responde…";
+  el("providers-raw").textContent="Consultando /v2/sanity/key y /v2/converter…";
+  try {
+    const response=await fetch("/api/providers/test",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:lastProviders.url,format:lastProviders.format,audioBitrate:"320",videoQuality:"720"})
+    });
+    const raw=await response.text();
+    let parsed;
+    try{parsed=JSON.parse(raw)}catch(e){throw Error("Respuesta no JSON (HTTP "+response.status+"): "+raw.slice(0,500))}
+    lastProviders={...lastProviders,status:response.ok&&parsed.ok?"completed":"failed",http_status:response.status,
+      response:parsed,elapsed_browser_ms:Math.round(performance.now()-began),finished_at:new Date().toISOString()};
+    el("providers-raw").textContent=JSON.stringify(lastProviders,null,2);
+    if(!response.ok||!parsed.ok)throw Error(parsed.error||"Error en la prueba");
+    const d=parsed.data;
+    renderProfiles(d);
+    const successes=(d.working_profiles||[]).length;
+    const skipped=(d.skipped_profiles||[]).length;
+    el("providers-status").className=successes===2?"success":successes===0?"error":"secondary";
+    el("providers-status").textContent=successes+"/2 perfiles devolvieron URL. "+
+      (skipped?"Omitidos: "+skipped+". ":"")+
+      "Revisá los detalles y copiá el diagnóstico para ChatGPT.";
+  } catch(err) {
+    lastProviders={...lastProviders,status:"failed",client_error:err.message,
+      finished_at:new Date().toISOString(),elapsed_browser_ms:Math.round(performance.now()-began)};
+    el("providers-raw").textContent=JSON.stringify(lastProviders,null,2);
+    el("providers-status").className="error";
+    el("providers-status").textContent="No se completó la comparación: "+err.message;
+  } finally {
+    button.disabled=false;el("start").disabled=false;el("fast-start").disabled=false;
+    setCopyReady(true);health();
+  }
+});
+
 el("fast-start").addEventListener("click",async()=>{
   if(!el("url").reportValidity())return;
   const button=el("fast-start");
   button.disabled=true;
-  el("start").disabled=true;
+  el("start").disabled=true;el("providers-start").disabled=true;
   lastTest=null;
+  lastProviders=null;
   el("result-status").textContent="Prueba con navegador no ejecutada (solo consulta rápida CNV).";
   lastFast={status:"in_progress",format:el("format").value,url:el("url").value.trim(),started_at:new Date().toISOString()};
   setCopyReady(false);
@@ -175,13 +269,13 @@ el("fast-start").addEventListener("click",async()=>{
     el("fast-status").textContent="CNV no devolvió una URL válida: "+err.message;
     el("fast-raw").textContent=JSON.stringify(lastFast,null,2);
   }finally{
-    button.disabled=false;el("start").disabled=false;
+    button.disabled=false;el("start").disabled=false;el("providers-start").disabled=false;
     setCopyReady(true);health();
   }
 });
 
 el("test-form").addEventListener("submit",async ev=>{
- ev.preventDefault();lastFast=null;el("fast-link").style.display="none";el("fast-link").removeAttribute("href");el("start").disabled=true;
+ ev.preventDefault();lastFast=null;lastProviders=null;el("providers-start").disabled=true;el("fast-start").disabled=true;el("fast-link").style.display="none";el("fast-link").removeAttribute("href");el("start").disabled=true;
  setCopyReady(false);el("diagnostic-fallback").style.display="none";
  current="";el("copy").disabled=true;el("log").textContent="Esperando respuesta de la prueba…";
  const requestedAt=new Date().toISOString();
@@ -231,7 +325,7 @@ el("test-form").addEventListener("submit",async ev=>{
    el("result-status").textContent="Prueba no completada: "+err.message;
    el("result-status").className="error";
    if(!current)showJson({client_error:err.message,request:lastTest});
- }finally{el("start").disabled=false;await health();setCopyReady(true)}
+ }finally{el("start").disabled=false;el("providers-start").disabled=false;el("fast-start").disabled=false;await health();setCopyReady(true)}
 });
 async function copyText(text){
   if(navigator.clipboard?.writeText){
@@ -248,7 +342,7 @@ el("copy").addEventListener("click",async()=>{
   el("copy-feedback").textContent=ok?"JSON copiado.":"No se pudo copiar automáticamente. Seleccioná y copiá el texto mostrado abajo.";
 });
 el("copy-chatgpt").addEventListener("click",async()=>{
-  if(!lastTest && !lastFast)return;
+  if(!lastTest && !lastFast && !lastProviders)return;
   const button=el("copy-chatgpt");button.disabled=true;
   el("copy-feedback").textContent="Preparando diagnóstico para ChatGPT…";
   const report=diagnosticText();
