@@ -1,12 +1,11 @@
 """Acceso rápido a CNV basado en cnv.mjs aportado por el usuario.
-Solicita una URL con dos perfiles de origen en paralelo; no baja el archivo.
+Solicita una URL con el perfil MP3YT exclusivamente; no baja el archivo.
 No emplea yt-dlp, Playwright, API keys hardcoded ni evasión de CAPTCHA.
 """
 import json
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode, urlsplit, parse_qs
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -14,12 +13,11 @@ from urllib.error import HTTPError, URLError
 BASE_URL = "https://cnv.cx"
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36")
-PROVIDERS = [
-    {"name": "y2meta-uk", "origin": "https://iframe.y2meta-uk.com", "referer": "https://iframe.y2meta-uk.com/"},
-    {"name": "mp3yt", "origin": "https://mp3yt.is", "referer": "https://mp3yt.is/"},
-]
-EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cnv")
+# Un solo perfil: mp3yt fue el que respondió en las pruebas del usuario.
+# Ambos perfiles previos consultaban el MISMO servidor cnv.cx.
+PROFILE = {"name": "mp3yt", "origin": "https://mp3yt.is", "referer": "https://mp3yt.is/"}
 SLOTS = threading.BoundedSemaphore(value=2)
+QUEUE_SLOTS = threading.BoundedSemaphore(value=8)
 
 
 def validate_youtube(value):
@@ -80,6 +78,9 @@ def _request_json(url, profile, method="GET", body=None, key=None, timeout=12):
     try:
         data = json.loads(raw.decode("utf-8", errors="replace"))
     except (UnicodeError, ValueError) as exc:
+        # Mostrar HTTP 403/429/5xx aunque el proveedor devuelva una página HTML.
+        if code < 200 or code >= 300:
+            raise RuntimeError("HTTP " + str(code) + " (el proveedor no devolvió JSON)") from exc
         raise RuntimeError("Respuesta no JSON, HTTP " + str(code)) from exc
 
     if code < 200 or code >= 300:
@@ -131,7 +132,7 @@ def _try_provider(profile, video_id, payload, started):
 
 
 def fast_convert(url, fmt, audio_bitrate="320", video_quality="720"):
-    """Return first valid URL; never verify or fetch media bytes in this endpoint."""
+    """Ask CNV once using MP3YT profile; return the URL, not the file."""
     video_id, canonical = validate_youtube(url)
     if fmt not in {"mp3", "mp4"}:
         raise ValueError("Formato inválido, elegí MP3 o MP4.")
@@ -139,11 +140,17 @@ def fast_convert(url, fmt, audio_bitrate="320", video_quality="720"):
         raise ValueError("Bitrate de MP3 inválido.")
     if str(video_quality) not in {"360", "480", "720", "1080"}:
         raise ValueError("Calidad de MP4 inválida.")
-    if not SLOTS.acquire(blocking=False):
-        raise RuntimeError("El servidor ya tiene dos consultas rápidas en curso.")
 
-    started = time.monotonic()
+    # No abrir cientos de threads si todos pulsan a la vez.
+    if not QUEUE_SLOTS.acquire(blocking=False):
+        raise RuntimeError("Demasiadas consultas en espera. Reintentá en unos segundos.")
+    acquired = False
     try:
+        # Una espera breve es preferible a rechazar a todos inmediatamente.
+        acquired = SLOTS.acquire(timeout=6)
+        if not acquired:
+            raise RuntimeError("Servidor ocupado: las dos consultas CNV en curso aún no terminaron.")
+        started = time.monotonic()
         payload = {
             "link": canonical,
             "format": fmt,
@@ -152,34 +159,45 @@ def fast_convert(url, fmt, audio_bitrate="320", video_quality="720"):
             "filenameStyle": "pretty",
             "vCodec": "h264",
         }
-        futures = [EXECUTOR.submit(_try_provider, profile, video_id, payload, started) for profile in PROVIDERS]
-        results = []
-        try:
-            for future in as_completed(futures, timeout=45):
-                result = future.result()
-                results.append(result)
-                if result["ok"]:
-                    return {
-                        "ok": True, "format": fmt, "quality": payload["audioBitrate"] + "kbps" if fmt == "mp3" else payload["videoQuality"] + "p",
-                        "video_url": canonical,
-                        "provider": result["provider"],
-                        "url": result["url"],
-                        "download_host": result["download_host"],
-                        "filename": result["filename"],
-                        "api_status": result["api_status"],
-                        "key_http_status": result["http_key"],
-                        "convert_http_status": result["http_convert"],
-                        "elapsed_ms": round((time.monotonic()-started)*1000),
-                        "note": "CNV devolvió una URL. No se descargó ni se verificó el archivo."
-                    }
-        finally:
-            for future in futures:
-                if not future.done():
-                    future.cancel()
-        raise RuntimeError("Ambos proveedores fallaron: " + " | ".join(
-            r["provider"] + ": " + r.get("error", "Error") for r in results
-        )[:850])
-    except TimeoutError as exc:
-        raise RuntimeError("La consulta rápida excedió 45 segundos.") from exc
+        result = _try_provider(PROFILE, video_id, payload, started)
+        # Un reintento corto solo ante error temporal del servicio.
+        # En HTTP 403/429 se respeta la denegación: no se intenta saltar bloqueos.
+        attempts = [result]
+        if not result["ok"]:
+            problem = result.get("error", "")
+            transient = any(x in problem for x in (
+                "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504",
+                "Timeout", "timed out", "Fallo de red"
+            ))
+            if transient:
+                time.sleep(1)
+                result = _try_provider(PROFILE, video_id, payload, started)
+                attempts.append(result)
+        if not result["ok"]:
+            reason = result.get("error") or "Fallo desconocido"
+            if "HTTP 429" in reason:
+                reason += " (CNV limitó las solicitudes; reducir frecuencia)"
+            elif "HTTP 403" in reason:
+                reason += " (CNV denegó el acceso)"
+            raise RuntimeError("CNV con MP3YT falló tras " + str(len(attempts)) +
+                               " intento(s): " + reason[:600])
+        return {
+            "ok": True,
+            "format": fmt,
+            "quality": payload["audioBitrate"] + "kbps" if fmt == "mp3" else payload["videoQuality"] + "p",
+            "video_url": canonical,
+            "provider": "mp3yt",
+            "url": result["url"],
+            "download_host": result["download_host"],
+            "filename": result["filename"],
+            "api_status": result["api_status"],
+            "key_http_status": result["http_key"],
+            "convert_http_status": result["http_convert"],
+            "attempts": len(attempts),
+            "elapsed_ms": round((time.monotonic()-started)*1000),
+            "note": "CNV devolvió una URL vía MP3YT. No se descargó ni verificó el archivo."
+        }
     finally:
-        SLOTS.release()
+        if acquired:
+            SLOTS.release()
+        QUEUE_SLOTS.release()
