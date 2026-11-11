@@ -55,7 +55,7 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <div id="fast-status" class="secondary" role="status" aria-live="polite">Pegá el enlace y elegí MP3 o MP4. Este modo solicita una URL al servicio CNV sin descargar el archivo en Render.</div>
 <a id="fast-link" class="button" target="_blank" rel="noopener noreferrer">Abrir enlace de descarga</a>
 <pre id="fast-raw">{ "status": "sin ejecutar" }</pre>
-<p class="small-note">Modo rápido: prueba las configuraciones de MP3YT y Y2meta en paralelo usando CNV. Solo confirma si el servicio respondió con una URL HTTPS, no el contenido del archivo. Usalo para contenido autorizado.</p>
+<p class="small-note">Modo rápido: consulta CNV usando únicamente el perfil MP3YT, para evitar duplicar solicitudes al mismo servidor. Solo confirma si CNV devuelve una URL HTTPS, no el contenido del archivo. Si CNV limita el tráfico (HTTP 429/403), muestra el error sin intentar eludirlo. Usalo para contenido autorizado.</p>
 </div>
 <p id="copy-feedback" class="copy-feedback" role="status" aria-live="polite">Después de probar, tocá «Copiar diagnóstico para ChatGPT» y pegalo en nuestra conversación.</p>
 <textarea id="diagnostic-fallback" readonly aria-label="Diagnóstico para copiar manualmente"></textarea>
@@ -150,7 +150,7 @@ el("fast-start").addEventListener("click",async()=>{
   el("fast-link").style.display="none";
   el("fast-link").removeAttribute("href");
   el("fast-status").className="secondary";
-  el("fast-status").textContent="Consultando CNV en paralelo (MP3YT + Y2meta), sin Playwright…";
+  el("fast-status").textContent="Consultando CNV con perfil MP3YT, sin navegador ni solicitudes duplicadas…";
   el("fast-raw").textContent="Esperando respuesta HTTP de CNV…";
   try{
     const response=await fetch("/api/fast",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -164,7 +164,7 @@ el("fast-start").addEventListener("click",async()=>{
     if(!response.ok||!data.ok)throw Error(data.error||"Error del servidor.");
     const result=data.data||{};
     el("fast-status").className="success";
-    el("fast-status").textContent="¡CNV entregó una URL! Proveedor: "+(result.provider||"?")+" · "+(result.elapsed_ms||"?")+" ms · Formato: "+(result.format||"?").toUpperCase()+". Estado: "+(result.api_status||"sin informar")+". La URL y el archivo todavía no se verificaron.";
+    el("fast-status").textContent="¡CNV entregó una URL! Perfil: "+(result.provider||"?")+" · "+(result.elapsed_ms||"?")+" ms · Formato: "+(result.format||"?").toUpperCase()+". Estado: "+(result.api_status||"sin informar")+". La URL y el archivo todavía no se verificaron.";
     if(result.url && /^https:\/\//i.test(result.url)){
       const a=el("fast-link");a.href=result.url;a.style.display="inline-block";a.textContent="Abrir enlace de "+(result.format||"descarga").toUpperCase();
     }
