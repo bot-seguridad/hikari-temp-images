@@ -60,7 +60,7 @@ a{color:var(--blue)}footer{font-size:12px;color:var(--muted)}
 <p id="copy-feedback" class="copy-feedback" role="status" aria-live="polite">Después de probar, tocá «Copiar diagnóstico para ChatGPT» y pegalo en nuestra conversación.</p>
 <textarea id="diagnostic-fallback" readonly aria-label="Diagnóstico para copiar manualmente"></textarea>
 <p id="browser-status" class="secondary">Consultando estado del navegador…</p>
-<div id="result-status" role="status" aria-live="polite">Todavía no se ejecutó ninguna prueba.</div>
+<div id="result-status" role="status" aria-live="polite">Todavía no se ejecutó la prueba con navegador. El modo rápido funciona por separado.</div>
 <p class="small-note">Esto automatiza <strong>MP3YT</strong>, no YouTube directamente. Primero espera el botón del formato elegido, después lo pulsa y comprueba si Chromium recibe un archivo con una cabecera MP3/MP4 válida. El archivo se usa solo para la prueba y se borra al cerrar el navegador. No se eluden CAPTCHA ni restricciones.</p>
 </section>
 <div class="results">
@@ -96,14 +96,14 @@ function diagnosticText(){
   return [
     "DIAGNÓSTICO DE MP3YT — PARA CHATGPT",
     "",
-    "Analizá si la automatización de la interfaz pública MP3YT funcionó, en qué paso se detuvo y qué habría que ajustar. No se está usando yt-dlp: se usa Playwright sobre mp3yt.is.",
-    "IMPORTANTE: «download_verified» requiere que Chromium haya recibido un archivo con la cabecera MP3/MP4 correcta. «ready_to_download» solo confirma un botón visible. Los archivos de prueba no se conservan ni se ofrecen para descargar desde este panel.",
+    "Analizá si funcionó la consulta rápida CNV o la prueba de navegador, según cuál se haya ejecutado. El modo rápido consulta CNV vía HTTP y devuelve una URL; la prueba lenta usa Playwright en MP3YT. Ninguno utiliza yt-dlp.",
+    "IMPORTANTE: el éxito de CNV significa que devolvió una URL de descarga, sin comprobar que funciona. En el modo navegador «download_verified» requiere que Chromium haya recibido un archivo con la cabecera MP3/MP4 correcta. «ready_to_download» solo confirma un botón visible.",
     "",
     "Página de pruebas: "+location.origin,
     "Fecha de copia: "+new Date().toISOString(),
-    "Formato solicitado: "+(record.format||el("format").value),
-    "Enlace de YouTube proporcionado: "+(record.url||el("url").value.trim()),
-    "Estado visible: "+el("result-status").textContent,
+    "Formato solicitado: "+(lastFast?.format||record.format||el("format").value),
+    "Enlace de YouTube proporcionado: "+(lastFast?.url||record.url||el("url").value.trim()),
+    "Estado del modo ejecutado: "+(lastFast?el("fast-status").textContent:el("result-status").textContent),
     "",
     "RESULTADO DE LA CONSULTA RÁPIDA CNV:",
     JSON.stringify(lastFast?{...lastFast,response:lastFast.response?{...lastFast.response,data:lastFast.response.data?{...lastFast.response.data,url:lastFast.response.data.url?"[URL omitida; host="+(lastFast.response.data.download_host||"?")+"]":null}:undefined}:undefined}:{note:"No se ejecutó la consulta rápida."},null,2),
@@ -143,6 +143,7 @@ el("fast-start").addEventListener("click",async()=>{
   button.disabled=true;
   el("start").disabled=true;
   lastTest=null;
+  el("result-status").textContent="Prueba con navegador no ejecutada (solo consulta rápida CNV).";
   lastFast={status:"in_progress",format:el("format").value,url:el("url").value.trim(),started_at:new Date().toISOString()};
   setCopyReady(false);
   const started=performance.now();
@@ -163,7 +164,7 @@ el("fast-start").addEventListener("click",async()=>{
     if(!response.ok||!data.ok)throw Error(data.error||"Error del servidor.");
     const result=data.data||{};
     el("fast-status").className="success";
-    el("fast-status").textContent="¡CNV respondió! Proveedor: "+(result.provider||"?")+" · "+(result.elapsed_ms||"?")+" ms · Formato: "+(result.format||"?").toUpperCase()+". Archivo sin descargar/verificar.";
+    el("fast-status").textContent="¡CNV entregó una URL! Proveedor: "+(result.provider||"?")+" · "+(result.elapsed_ms||"?")+" ms · Formato: "+(result.format||"?").toUpperCase()+". Estado: "+(result.api_status||"sin informar")+". La URL y el archivo todavía no se verificaron.";
     if(result.url && /^https:\/\//i.test(result.url)){
       const a=el("fast-link");a.href=result.url;a.style.display="inline-block";a.textContent="Abrir enlace de "+(result.format||"descarga").toUpperCase();
     }
@@ -180,7 +181,7 @@ el("fast-start").addEventListener("click",async()=>{
 });
 
 el("test-form").addEventListener("submit",async ev=>{
- ev.preventDefault();lastFast=null;el("start").disabled=true;
+ ev.preventDefault();lastFast=null;el("fast-link").style.display="none";el("fast-link").removeAttribute("href");el("start").disabled=true;
  setCopyReady(false);el("diagnostic-fallback").style.display="none";
  current="";el("copy").disabled=true;el("log").textContent="Esperando respuesta de la prueba…";
  const requestedAt=new Date().toISOString();
