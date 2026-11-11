@@ -8,6 +8,7 @@ from threading import Lock
 from urllib.parse import urlsplit
 from scraper import scrape_public_page
 from mp3yt_browser import begin_setup, engine_status, get_screenshot, run_test
+from fast_cnv import fast_convert
 
 BASE = Path(__file__).resolve().parent
 CACHE_SECONDS = 90
@@ -42,7 +43,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/health":
             return self.send_json({"ok": True, "target": "https://mp3yt.is/",
-                "mode": "mp3yt-public-browser-automation", "browser": engine_status()})
+                "mode": "mp3yt-browser-and-cnv-direct", "browser": engine_status(),
+                "fast_cnv": {"available": True, "providers": ["mp3yt", "y2meta-uk"], "returns": "url-only"}})
         if path == "/api/scrape":
             try:
                 with lock:
@@ -69,7 +71,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_bytes(b"Not found", "text/plain; charset=utf-8", 404)
 
     def do_POST(self):
-        if urlsplit(self.path).path != "/api/convert":
+        action = urlsplit(self.path).path
+        if action not in {"/api/convert", "/api/fast"}:
             return self.send_json({"ok": False, "error": "Endpoint desconocido."}, 404)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -80,13 +83,20 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 return self.send_json({"ok": False, "error": "JSON inválido."}, 400)
-            data = run_test(payload.get("url", ""), payload.get("format", ""))
+            if action == "/api/fast":
+                data = fast_convert(
+                    payload.get("url", ""), payload.get("format", ""),
+                    payload.get("audioBitrate", "320"),
+                    payload.get("videoQuality", "720"),
+                )
+            else:
+                data = run_test(payload.get("url", ""), payload.get("format", ""))
             return self.send_json({"ok": True, "data": data})
         except ValueError as exc:
             return self.send_json({"ok": False, "error": str(exc)}, 400)
         except RuntimeError as exc:
             error = str(exc)
-            status = 503 if "aún no está listo" in error else 429 if "otra prueba" in error else 502
+            status = 503 if "aún no está listo" in error else 429 if "otra prueba" in error or "dos consultas rápidas" in error else 502
             return self.send_json({"ok": False, "error": error}, status)
         except Exception as exc:
             print("[mp3yt] Error inesperado en prueba: " + str(exc)[:300], flush=True)
