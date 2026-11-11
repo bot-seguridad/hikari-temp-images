@@ -44,7 +44,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return self.send_json({"ok": True, "target": "https://mp3yt.is/",
                 "mode": "mp3yt-browser-and-cnv-direct", "browser": engine_status(),
-                "fast_cnv": {"available": True, "providers": ["mp3yt", "y2meta-uk"], "returns": "url-only"}})
+                "fast_cnv": {"available": True, "providers": ["mp3yt"], "returns": "url-only", "max_active": 2, "max_waiting": 6}})
         if path == "/api/scrape":
             try:
                 with lock:
@@ -96,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": False, "error": str(exc)}, 400)
         except RuntimeError as exc:
             error = str(exc)
-            status = 503 if "aún no está listo" in error else 429 if "otra prueba" in error or "dos consultas rápidas" in error else 502
+            status = 503 if "aún no está listo" in error else 429 if ("otra prueba" in error or "Demasiadas consultas" in error or "Servidor ocupado" in error or "HTTP 429" in error) else 502
             return self.send_json({"ok": False, "error": error}, status)
         except Exception as exc:
             print("[mp3yt] Error inesperado en prueba: " + str(exc)[:300], flush=True)
